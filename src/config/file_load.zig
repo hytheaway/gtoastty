@@ -11,16 +11,16 @@ const log = std.log.scoped(.config);
 pub fn defaultXdgPath(alloc: Allocator) ![]const u8 {
     return try internal_os.xdg.config(
         alloc,
-        .{ .subdir = "ghostty/config.ghostty" },
+        .{ .subdir = "gtoastty/config" },
     );
 }
 
-/// Ghostty <1.3.0 default path for the XDG home configuration file.
+/// Previous default path for the XDG home configuration file.
 /// Returned value must be freed by the caller.
 pub fn legacyDefaultXdgPath(alloc: Allocator) ![]const u8 {
     return try internal_os.xdg.config(
         alloc,
-        .{ .subdir = "gtoasty/config" },
+        .{ .subdir = "ghostty/config.ghostty" },
     );
 }
 
@@ -96,23 +96,20 @@ pub fn preferredAppSupportPath(alloc: Allocator) ![]const u8 {
 pub fn preferredDefaultFilePath(alloc: Allocator) ![]const u8 {
     switch (builtin.os.tag) {
         .macos => {
-            // macOS prefers the Application Support directory
-            // if it exists.
-            const app_support_path = try preferredAppSupportPath(alloc);
-            const app_support_file = open(app_support_path) catch {
-                // Try the XDG path if it exists
-                const xdg_path = try preferredXdgPath(alloc);
-                const xdg_file = open(xdg_path) catch {
-                    // If neither file exists, use app support
-                    alloc.free(xdg_path);
-                    return app_support_path;
+            // Prefer the config file in ~/.config/gtoastty when it exists.
+            const xdg_path = try preferredXdgPath(alloc);
+            const xdg_file = open(xdg_path) catch {
+                const app_support_path = try preferredAppSupportPath(alloc);
+                const app_support_file = open(app_support_path) catch {
+                    alloc.free(app_support_path);
+                    return xdg_path;
                 };
-                xdg_file.close();
-                alloc.free(app_support_path);
-                return xdg_path;
+                app_support_file.close();
+                alloc.free(xdg_path);
+                return app_support_path;
             };
-            app_support_file.close();
-            return app_support_path;
+            xdg_file.close();
+            return xdg_path;
         },
 
         // All other platforms use XDG only

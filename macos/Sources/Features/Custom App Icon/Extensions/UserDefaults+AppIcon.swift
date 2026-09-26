@@ -8,9 +8,9 @@ extension UserDefaults {
     /// another app that uses the `com.mitchellh.ghostty` bundle identifier.
     private static func iconDefaults() -> UserDefaults? {
         #if DEBUG
-        UserDefaults(suiteName: "com.mitchellh.gtoasty.debug")
+        UserDefaults(suiteName: "com.mitchellh.gtoastty.debug")
         #else
-        UserDefaults(suiteName: "com.mitchellh.gtoasty")
+        UserDefaults(suiteName: "com.mitchellh.gtoastty")
         #endif
     }
 

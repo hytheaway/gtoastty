@@ -3981,22 +3981,58 @@ fn writeConfigTemplate(path: []const u8) !void {
         @embedFile("./config-template"),
         .{ .path = path },
     );
+    try writer.flush();
 }
 
 /// Load configurations from the default configuration files. The default
-/// configuration file is at `$XDG_CONFIG_HOME/ghostty/config.ghostty`.
+/// configuration file is at `$XDG_CONFIG_HOME/gtoastty/config`.
 ///
 /// On macOS, `$HOME/Library/Application Support/$CFBundleIdentifier/`
-/// is also loaded.
-///
-/// The legacy `config` file (without extension) is first loaded,
-/// then `config.ghostty`.
+/// is also loaded, but the XDG file is applied after it.
 pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
-    // Load XDG first
     const legacy_xdg_path = try file_load.legacyDefaultXdgPath(alloc);
     defer alloc.free(legacy_xdg_path);
     const xdg_path = try file_load.defaultXdgPath(alloc);
     defer alloc.free(xdg_path);
+
+    // On macOS, load Application Support before the XDG config so
+    // ~/.config/gtoastty/config wins when both exist.
+    const app_support_loaded: bool = if (comptime builtin.os.tag == .macos) loaded: {
+        const legacy_app_support_path = try file_load.legacyDefaultAppSupportPath(alloc);
+        defer alloc.free(legacy_app_support_path);
+        const app_support_path = try file_load.preferredAppSupportPath(alloc);
+        defer alloc.free(app_support_path);
+
+        const legacy_app_support_action = self.loadOptionalFile(
+            alloc,
+            legacy_app_support_path,
+        );
+
+        // The app support path and legacy may be the same, since we
+        // use the `preferred` call above. If its the same, avoid
+        // a double-load.
+        const app_support_action: OptionalFileAction = if (!std.mem.eql(
+            u8,
+            legacy_app_support_path,
+            app_support_path,
+        )) self.loadOptionalFile(
+            alloc,
+            app_support_path,
+        ) else .not_found;
+
+        if (app_support_action != .not_found and legacy_app_support_action != .not_found) {
+            log.warn(
+                "both config files `{s}` and `{s}` exist.",
+                .{ legacy_app_support_path, app_support_path },
+            );
+            log.warn("loading them both in that order", .{});
+            break :loaded true;
+        }
+
+        break :loaded app_support_action != .not_found or
+            legacy_app_support_action != .not_found;
+    } else false;
+
     const xdg_loaded: bool = xdg_loaded: {
         const legacy_xdg_action = self.loadOptionalFile(alloc, legacy_xdg_path);
         const xdg_action = self.loadOptionalFile(alloc, xdg_path);
@@ -4010,56 +4046,10 @@ pub fn loadDefaultFiles(self: *Config, alloc: Allocator) !void {
             legacy_xdg_action != .not_found;
     };
 
-    // On macOS load the app support directory as well
-    if (comptime builtin.os.tag == .macos) {
-        const legacy_app_support_path = try file_load.legacyDefaultAppSupportPath(alloc);
-        defer alloc.free(legacy_app_support_path);
-        const app_support_path = try file_load.preferredAppSupportPath(alloc);
-        defer alloc.free(app_support_path);
-        const app_support_loaded: bool = loaded: {
-            const legacy_app_support_action = self.loadOptionalFile(
-                alloc,
-                legacy_app_support_path,
-            );
-
-            // The app support path and legacy may be the same, since we
-            // use the `preferred` call above. If its the same, avoid
-            // a double-load.
-            const app_support_action: OptionalFileAction = if (!std.mem.eql(
-                u8,
-                legacy_app_support_path,
-                app_support_path,
-            )) self.loadOptionalFile(
-                alloc,
-                app_support_path,
-            ) else .not_found;
-
-            if (app_support_action != .not_found and legacy_app_support_action != .not_found) {
-                log.warn(
-                    "both config files `{s}` and `{s}` exist.",
-                    .{ legacy_app_support_path, app_support_path },
-                );
-                log.warn("loading them both in that order", .{});
-                break :loaded true;
-            }
-
-            break :loaded app_support_action != .not_found or
-                legacy_app_support_action != .not_found;
+    if (!app_support_loaded and !xdg_loaded) {
+        writeConfigTemplate(xdg_path) catch |err| {
+            log.warn("error creating template config file err={}", .{err});
         };
-
-        // If both files are not found, then we create a template file.
-        // For macOS, we only create the template file in the app support
-        if (!app_support_loaded and !xdg_loaded) {
-            writeConfigTemplate(app_support_path) catch |err| {
-                log.warn("error creating template config file err={}", .{err});
-            };
-        }
-    } else {
-        if (!xdg_loaded) {
-            writeConfigTemplate(xdg_path) catch |err| {
-                log.warn("error creating template config file err={}", .{err});
-            };
-        }
     }
 }
 

@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleName</key>
-	<string>gtoasty</string>
+	<string>gtoastty</string>
 	<key>CFBundleDisplayName</key>
-	<string>gtoasty</string>
+	<string>gtoastty</string>
 	<key>NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac</key>
 	<true/>
 	<key>NSDockTilePlugIn</key>
