@@ -1,3 +1,15 @@
+<h1>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/03341816-9562-4d34-a211-593b084d4c2a" alt="Logo" width="128">
+  <br>gtoastty
+</h1>
+  <p align="center">
+    gtoastty is a set of tweaks based on Ghostty 1.3.1.
+  </p>
+</p>
+
+---
+
 <!-- LOGO -->
 <h1>
 <p align="center">
