@@ -1,6 +1,7 @@
 import Foundation
 import Cocoa
 import SwiftUI
+import GhosttyKit
 
 /// This initializes a clipboard confirmation warning window. The window itself
 /// WILL NOT show automatically and the caller must show the window via
@@ -8,14 +9,17 @@ import SwiftUI
 class ClipboardConfirmationController: NSWindowController {
     override var windowNibName: NSNib.Name? { "ClipboardConfirmation" }
 
-    private(set) var confirmation: Ghostty.ClipboardConfirmationRequest
+    let surface: ghostty_surface_t
+    let contents: String
+    let request: Ghostty.ClipboardRequest
+    let state: UnsafeMutableRawPointer?
     weak private var delegate: ClipboardConfirmationViewDelegate?
 
-    init(
-        confirmation: Ghostty.ClipboardConfirmationRequest,
-        delegate: ClipboardConfirmationViewDelegate
-    ) {
-        self.confirmation = confirmation
+    init(surface: ghostty_surface_t, contents: String, request: Ghostty.ClipboardRequest, state: UnsafeMutableRawPointer?, delegate: ClipboardConfirmationViewDelegate) {
+        self.surface = surface
+        self.contents = contents
+        self.request = request
+        self.state = state
         self.delegate = delegate
         super.init(window: nil)
     }
@@ -24,39 +28,21 @@ class ClipboardConfirmationController: NSWindowController {
         fatalError("init(coder:) is not supported for this view")
     }
 
-    /// Replace the request represented by the visible sheet without changing
-    /// the sheet's focus state. The previous request is cancelled by its
-    /// SurfaceView before this method is called.
-    func replaceConfirmation(with confirmation: Ghostty.ClipboardConfirmationRequest) {
-        guard self.confirmation !== confirmation else { return }
-        self.confirmation = confirmation
-
-        guard isWindowLoaded, let window else { return }
-        configure(window)
-    }
-
     // MARK: - NSWindowController
 
     override func windowDidLoad() {
         guard let window = window else { return }
 
-        configure(window)
-    }
-
-    private func configure(_ window: NSWindow) {
-        switch confirmation.kind {
+        switch request {
         case .paste:
             window.title = "Warning: Potentially Unsafe Paste"
-        case .osc_52_read, .osc_52_write, .kitty_read, .kitty_write:
+        case .osc_52_read, .osc_52_write:
             window.title = "Authorize Clipboard Access"
         }
 
         window.contentView = NSHostingView(rootView: ClipboardConfirmationView(
-            contents: confirmation.contents,
-            request: confirmation.kind,
-            programName: confirmation.programName,
-            canRemember: confirmation.canRemember,
-            previewImage: confirmation.previewImage,
+            contents: contents,
+            request: request,
             delegate: delegate
         ))
     }

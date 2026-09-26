@@ -1,9 +1,11 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const build_config = @import("../build_config.zig");
-const global = @import("../global.zig");
+const posix = std.posix;
 
-const c = @import("posix_c");
+const c = @cImport({
+    @cInclude("unistd.h");
+});
 
 /// Returns true if the program was launched from a desktop environment.
 ///
@@ -24,7 +26,7 @@ pub fn launchedFromDesktop() bool {
             // was launched from the desktop.
             if (build_config.artifact == .lib) lib: {
                 const env = "GHOSTTY_MAC_LAUNCH_SOURCE";
-                const source = global.environ().getPosix(env) orelse break :lib;
+                const source = posix.getenv(env) orelse break :lib;
 
                 // Source can be "app", "cli", or "zig_run". We assume
                 // its the desktop only if its "app". We may want to do
@@ -42,7 +44,7 @@ pub fn launchedFromDesktop() bool {
         // another terminal was launched from a desktop file and then launches
         // Ghostty and Ghostty inherits the env.
         .linux, .freebsd => ul: {
-            const gio_pid_str = global.environ().getPosix("GIO_LAUNCHED_DESKTOP_FILE_PID") orelse
+            const gio_pid_str = posix.getenv("GIO_LAUNCHED_DESKTOP_FILE_PID") orelse
                 break :ul false;
 
             const pid = c.getpid();
@@ -78,7 +80,7 @@ pub const DesktopEnvironment = enum {
 /// Detect what desktop environment we are running under. This is mainly used
 /// on Linux and BSD to enable or disable certain features but there may be more uses in
 /// the future.
-pub fn desktopEnvironment(environ_map: *const std.process.Environ.Map) DesktopEnvironment {
+pub fn desktopEnvironment() DesktopEnvironment {
     return switch (comptime builtin.os.tag) {
         .macos => .macos,
         .windows => .windows,
@@ -87,7 +89,7 @@ pub fn desktopEnvironment(environ_map: *const std.process.Environ.Map) DesktopEn
 
             // Use $XDG_SESSION_DESKTOP to determine what DE we are using on Linux
             // https://www.freedesktop.org/software/systemd/man/latest/pam_systemd.html#desktop=
-            if (environ_map.get("XDG_SESSION_DESKTOP")) |sd| {
+            if (posix.getenv("XDG_SESSION_DESKTOP")) |sd| {
                 if (std.ascii.eqlIgnoreCase("gnome", sd)) break :de .gnome;
                 if (std.ascii.eqlIgnoreCase("gnome-xorg", sd)) break :de .gnome;
             }
@@ -97,7 +99,7 @@ pub fn desktopEnvironment(environ_map: *const std.process.Environ.Map) DesktopEn
             // colon-separated list of up to three desktop names, although we
             // only look at the first.
             // https://specifications.freedesktop.org/desktop-entry-spec/latest/recognized-keys.html
-            if (environ_map.get("XDG_CURRENT_DESKTOP")) |cd| {
+            if (posix.getenv("XDG_CURRENT_DESKTOP")) |cd| {
                 var cd_it = std.mem.splitScalar(u8, cd, ':');
                 const cd_first = cd_it.first();
                 if (std.ascii.eqlIgnoreCase(cd_first, "gnome")) break :de .gnome;
@@ -112,55 +114,46 @@ pub fn desktopEnvironment(environ_map: *const std.process.Environ.Map) DesktopEn
 test "desktop environment" {
     const testing = std.testing;
 
-    // Always run these tests with a blank evironment map so that we don't get any
-    // failures from values in the "real" evironment leaking in.
     switch (builtin.os.tag) {
-        inline .macos, .windows => |tag| {
-            var environ_map: std.process.Environ.Map = .init(testing.allocator);
-            defer environ_map.deinit();
-            try testing.expectEqual(@tagName(tag), @tagName(desktopEnvironment(&environ_map)));
-        },
+        .macos => try testing.expectEqual(.macos, desktopEnvironment()),
+        .windows => try testing.expectEqual(.windows, desktopEnvironment()),
         .linux, .freebsd => {
-            {
-                var environ_map: std.process.Environ.Map = .init(testing.allocator);
-                defer environ_map.deinit();
-                try environ_map.put("XDG_SESSION_DESKTOP", "gnome");
-                try testing.expectEqual(.gnome, desktopEnvironment(&environ_map));
-            }
+            const getenv = std.posix.getenv;
+            const setenv = @import("env.zig").setenv;
+            const unsetenv = @import("env.zig").unsetenv;
 
-            {
-                var environ_map: std.process.Environ.Map = .init(testing.allocator);
-                defer environ_map.deinit();
-                try environ_map.put("XDG_SESSION_DESKTOP", "gnome-xorg");
-                try testing.expectEqual(.gnome, desktopEnvironment(&environ_map));
-            }
+            const xdg_current_desktop = getenv("XDG_CURRENT_DESKTOP");
+            defer if (xdg_current_desktop) |v| {
+                _ = setenv("XDG_CURRENT_DESKTOP", v);
+            } else {
+                _ = unsetenv("XDG_CURRENT_DESKTOP");
+            };
+            _ = unsetenv("XDG_CURRENT_DESKTOP");
 
-            {
-                var environ_map: std.process.Environ.Map = .init(testing.allocator);
-                defer environ_map.deinit();
-                try environ_map.put("XDG_SESSION_DESKTOP", "foobar");
-                try testing.expectEqual(.other, desktopEnvironment(&environ_map));
-            }
+            const xdg_session_desktop = getenv("XDG_SESSION_DESKTOP");
+            defer if (xdg_session_desktop) |v| {
+                _ = setenv("XDG_SESSION_DESKTOP", v);
+            } else {
+                _ = unsetenv("XDG_SESSION_DESKTOP");
+            };
+            _ = unsetenv("XDG_SESSION_DESKTOP");
 
-            {
-                var environ_map: std.process.Environ.Map = .init(testing.allocator);
-                defer environ_map.deinit();
-                try environ_map.put("XDG_CURRENT_DESKTOP", "GNOME");
-                try testing.expectEqual(.gnome, desktopEnvironment(&environ_map));
-            }
+            _ = setenv("XDG_SESSION_DESKTOP", "gnome");
+            try testing.expectEqual(.gnome, desktopEnvironment());
+            _ = setenv("XDG_SESSION_DESKTOP", "gnome-xorg");
+            try testing.expectEqual(.gnome, desktopEnvironment());
+            _ = setenv("XDG_SESSION_DESKTOP", "foobar");
+            try testing.expectEqual(.other, desktopEnvironment());
 
-            {
-                var environ_map: std.process.Environ.Map = .init(testing.allocator);
-                defer environ_map.deinit();
-                try environ_map.put("XDG_CURRENT_DESKTOP", "FOOBAR");
-                try testing.expectEqual(.other, desktopEnvironment(&environ_map));
-            }
+            _ = unsetenv("XDG_SESSION_DESKTOP");
+            try testing.expectEqual(.other, desktopEnvironment());
 
-            {
-                var environ_map: std.process.Environ.Map = .init(testing.allocator);
-                defer environ_map.deinit();
-                try testing.expectEqual(.other, desktopEnvironment(&environ_map));
-            }
+            _ = setenv("XDG_CURRENT_DESKTOP", "GNOME");
+            try testing.expectEqual(.gnome, desktopEnvironment());
+            _ = setenv("XDG_CURRENT_DESKTOP", "FOOBAR");
+            try testing.expectEqual(.other, desktopEnvironment());
+            _ = unsetenv("XDG_CURRENT_DESKTOP");
+            try testing.expectEqual(.other, desktopEnvironment());
         },
         else => try testing.expectEqual(.other, DesktopEnvironment()),
     }

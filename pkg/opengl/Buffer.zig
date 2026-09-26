@@ -1,7 +1,7 @@
 const Buffer = @This();
 
 const std = @import("std");
-const c = @import("opengl_c");
+const c = @import("c.zig").c;
 const errors = @import("errors.zig");
 const glad = @import("glad.zig");
 

@@ -1,4 +1,7 @@
-const c = @import("stb_c");
+const c = @cImport({
+    @cInclude("stb_image.h");
+    @cInclude("stb_image_resize.h");
+});
 
 // We'll just add the exports of the functions or types we actually use
 // here, no need to export everything from the C lib if we don't use it.

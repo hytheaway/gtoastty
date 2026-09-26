@@ -14,11 +14,6 @@ extension NSView {
 
         return false
     }
-
-    /// Returns true if this view is currently the first responder
-    var isFirstResponder: Bool {
-        window?.firstResponder === self
-    }
 }
 
 // MARK: Screenshot

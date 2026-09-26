@@ -291,7 +291,7 @@ pub const Face = struct {
         alloc: Allocator,
         atlas: *font.Atlas,
         glyph_index: u32,
-        opts: font.Glyph.RenderOptions,
+        opts: font.face.RenderOptions,
     ) !font.Glyph {
         var glyphs = [_]macos.graphics.Glyph{@intCast(glyph_index)};
 
@@ -926,7 +926,6 @@ const ColorState = struct {
             const svg = opentype.SVG.init(ptr[0..len]) catch |err| {
                 return switch (err) {
                     error.EndOfStream,
-                    error.ReadFailed,
                     error.SVGVersionNotSupported,
                     => error.InvalidSVGTable,
                 };

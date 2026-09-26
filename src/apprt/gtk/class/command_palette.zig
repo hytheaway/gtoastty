@@ -153,7 +153,7 @@ pub const CommandPalette = extern struct {
         priv.source.removeAll();
 
         const alloc = Application.default().allocator();
-        var commands: std.ArrayList(*Command) = .empty;
+        var commands: std.ArrayList(*Command) = .{};
         defer {
             for (commands.items) |cmd| cmd.unref();
             commands.deinit(alloc);
@@ -353,7 +353,7 @@ pub const CommandPalette = extern struct {
         // Regular command - emit trigger signal
         const action = cmd.getAction() orelse return;
 
-        // Signal that an action has been selected. Signals are synchronous
+        // Signal that an an action has been selected. Signals are synchronous
         // so we shouldn't need to worry about cloning the action.
         signals.trigger.impl.emit(
             self,
@@ -581,8 +581,10 @@ const Command = extern struct {
 
         const priv = self.private();
         priv.data = .{
-            // Surface should be initialized at this point.
-            .jump = .{ .sort_key = surface.core().?.id },
+            .jump = .{
+                // TODO: Replace with surface id whenever Ghostty adds one
+                .sort_key = @intFromPtr(surface),
+            },
         };
         priv.data.jump.surface.set(surface);
 
@@ -609,7 +611,7 @@ const Command = extern struct {
         switch (priv.data) {
             .regular => {},
             .jump => |*j| {
-                j.surface.deinit();
+                j.surface.set(null);
             },
         }
 

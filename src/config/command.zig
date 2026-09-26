@@ -123,7 +123,7 @@ pub const Command = union(enum) {
 
     /// Iterates over each argument in the command.
     pub const ArgIterator = union(enum) {
-        shell: std.process.Args.IteratorGeneral(.{}),
+        shell: std.process.ArgIteratorGeneral(.{}),
         direct: struct {
             i: usize = 0,
             args: []const [:0]const u8,

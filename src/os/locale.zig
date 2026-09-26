@@ -9,10 +9,13 @@ const i18n = internal_os.i18n;
 const log = std.log.scoped(.os_locale);
 
 /// Ensure that the locale is set.
-pub fn ensureLocale() !void {
-    // This does a lot of in-process mutation of the environment and can't be
-    // run in a test as a result.
-    assert(!builtin.is_test);
+pub fn ensureLocale(alloc: std.mem.Allocator) !void {
+    assert(builtin.link_libc);
+
+    // Get our LANG env var. We use this many times but we also need
+    // the original value later.
+    const lang = try internal_os.getenv(alloc, "LANG");
+    defer if (lang) |v| v.deinit(alloc);
 
     // On macOS, pre-populate the LANG env var with system preferences.
     // When launching the .app, LANG is not set so we must query it from the
@@ -20,8 +23,7 @@ pub fn ensureLocale() !void {
     // process.
     if (comptime builtin.target.os.tag.isDarwin()) {
         // Set the lang if it is not set or if its empty.
-        const lang = std.posix.system.getenv("LANG");
-        if (lang == null or lang.?[0] == 0) {
+        if (lang == null or lang.?.value.len == 0) {
             setLangFromCocoa();
         }
     }
@@ -32,29 +34,16 @@ pub fn ensureLocale() !void {
         return;
     }
 
-    if (builtin.os.tag == .windows) {
-        // Exit early for Windows.
-        //
-        // NOTE: There currently is no official Windows version of Ghostty,
-        // either by way of an official Windows port or through use of
-        // libghostty-internal. As such this function is likely unused on those
-        // platforms, so this serves as a TODO stub to support more robust
-        // locale support on Windows. setlocale on Windows sets an
-        // "implementation-defined native environment" with an empty string, so
-        // we are currently just doing best-effort for now.
-        log.info("TODO: setlocale failed on Windows, implement better fallbacks", .{});
-        return;
-    }
-
     // setlocale failed. This is probably because the LANG env var is
     // invalid. Try to set it without the LANG var set to use the system
     // default.
-    if (std.posix.system.getenv("LANG")) |lang| {
-        if (lang[0] != 0) {
+    if ((try internal_os.getenv(alloc, "LANG"))) |old_lang| {
+        defer old_lang.deinit(alloc);
+        if (old_lang.value.len > 0) {
             // We don't need to do both of these things but we do them
             // both to be sure that lang is either empty or unset completely.
-            _ = setenv("LANG", "", 1);
-            _ = unsetenv("LANG");
+            _ = internal_os.setenv("LANG", "");
+            _ = internal_os.unsetenv("LANG");
 
             if (setlocale(LC_ALL, "")) |v| {
                 log.info("setlocale after unset lang result={s}", .{v});
@@ -70,7 +59,7 @@ pub fn ensureLocale() !void {
     // Failure again... fallback to en_US.UTF-8
     log.warn("setlocale failed with LANG and system default. Falling back to en_US.UTF-8", .{});
     if (setlocale(LC_ALL, "en_US.UTF-8")) |v| {
-        _ = setenv("LANG", "en_US.UTF-8", 1);
+        _ = internal_os.setenv("LANG", "en_US.UTF-8");
         log.info("setlocale default result={s}", .{v});
         return;
     } else log.warn("setlocale failed even with the fallback, uncertain results", .{});
@@ -117,7 +106,7 @@ fn setLangFromCocoa() void {
         log.info("detected system locale={s}", .{env_value});
 
         // Set it onto our environment
-        if (setenv("LANG", @ptrCast(env_value), 1) < 0) {
+        if (internal_os.setenv("LANG", env_value) < 0) {
             log.warn("error setting locale env var", .{});
             return;
         }
@@ -140,7 +129,7 @@ fn setLangFromCocoa() void {
             "setting LANGUAGE from preferred languages value={s}",
             .{pref},
         );
-        _ = setenv("LANGUAGE", @ptrCast(pref), 1);
+        _ = internal_os.setenv("LANGUAGE", pref);
     }
 }
 
@@ -167,7 +156,8 @@ fn preferredLanguageFromCocoa(
     buf: []u8,
     NSLocale: objc.Class,
 ) error{NoSpaceLeft}!?[:0]const u8 {
-    var writer: std.Io.Writer = .fixed(buf);
+    var fbs = std.io.fixedBufferStream(buf);
+    const writer = fbs.writer();
 
     // We need to get our app's preferred languages. These may not
     // match the system locale (NSLocale.currentLocale).
@@ -190,7 +180,7 @@ fn preferredLanguageFromCocoa(
         };
 
         // Append our separator if we have any previous languages
-        if (writer.end > 0) {
+        if (fbs.pos > 0) {
             _ = writer.writeByte(':') catch
                 return error.NoSpaceLeft;
         }
@@ -198,10 +188,10 @@ fn preferredLanguageFromCocoa(
         // Apple languages are in BCP-47 format, and we need to
         // canonicalize them to the POSIX format.
         const canon = try i18n.canonicalizeLocale(
-            writer.buffer[writer.end..],
+            fbs.buffer[fbs.pos..],
             c_str,
         );
-        writer.end += canon.len;
+        fbs.seekBy(@intCast(canon.len)) catch unreachable;
 
         // The canonicalized locale never contains the encoding and
         // all of our translations require UTF-8 so we add that.
@@ -209,24 +199,20 @@ fn preferredLanguageFromCocoa(
     }
 
     // If we had no preferred languages then we return nothing.
-    if (writer.end == 0) return null;
+    if (fbs.pos == 0) return null;
 
     // Null terminate it
     _ = writer.writeByte(0) catch return error.NoSpaceLeft;
 
     // Get our slice, this won't be null terminated so we have to
     // reslice it with the null terminator.
-    const slice = writer.buffered();
+    const slice = fbs.getWritten();
     return slice[0 .. slice.len - 1 :0];
 }
 
-const c = @import("locale-c");
-const LC_ALL: c_int = c.LC_ALL;
-const LC_ALL_MASK: c_int = c.LC_ALL_MASK;
-const locale_t = c.locale_t;
-const setlocale = c.setlocale;
-const newlocale = c.newlocale;
-const freelocale = c.freelocale;
-
-extern "c" fn setenv(name: ?[*]const u8, value: ?[*]const u8, overwrite: c_int) c_int;
-extern "c" fn unsetenv(name: ?[*]const u8) c_int;
+const LC_ALL: c_int = 6; // from locale.h
+const LC_ALL_MASK: c_int = 0x7fffffff; // from locale.h
+const locale_t = ?*anyopaque;
+extern "c" fn setlocale(category: c_int, locale: ?[*]const u8) ?[*:0]u8;
+extern "c" fn newlocale(category: c_int, locale: ?[*]const u8, base: locale_t) locale_t;
+extern "c" fn freelocale(v: locale_t) void;

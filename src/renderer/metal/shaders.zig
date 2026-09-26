@@ -3,7 +3,6 @@ const Allocator = std.mem.Allocator;
 const macos = @import("macos");
 const objc = @import("objc");
 const math = @import("../../math.zig");
-const global = @import("../../global.zig");
 
 const mtl = @import("api.zig");
 const Pipeline = @import("Pipeline.zig");
@@ -77,16 +76,22 @@ const PipelineDescription = struct {
 
 /// We create a type for the pipeline collection based on our desc array.
 const PipelineCollection = t: {
-    const StructField = std.builtin.Type.StructField;
-
-    var names: [pipeline_descs.len][]const u8 = undefined;
-    var types = [_]type{Pipeline} ** pipeline_descs.len;
-    var attrs = [_]StructField.Attributes{.{ .@"align" = @alignOf(Pipeline) }} ** pipeline_descs.len;
-
-    for (pipeline_descs, &names) |pipeline, *name| {
-        name.* = pipeline[0];
+    var fields: [pipeline_descs.len]std.builtin.Type.StructField = undefined;
+    for (pipeline_descs, 0..) |pipeline, i| {
+        fields[i] = .{
+            .name = pipeline[0],
+            .type = Pipeline,
+            .default_value_ptr = null,
+            .is_comptime = false,
+            .alignment = @alignOf(Pipeline),
+        };
     }
-    break :t @Struct(.auto, null, &names, &types, &attrs);
+    break :t @Type(.{ .@"struct" = .{
+        .layout = .auto,
+        .fields = &fields,
+        .decls = &.{},
+        .is_tuple = false,
+    } });
 };
 
 /// This contains the state for the shaders used by the Metal renderer.
@@ -104,13 +109,6 @@ pub const Shaders = struct {
     /// Set to true when deinited, if you try to deinit a defunct set
     /// of shaders it will just be ignored, to prevent double-free.
     defunct: bool = false,
-
-    pub const uninit: Shaders = .{
-        .library = undefined,
-        .pipelines = undefined,
-        .post_pipelines = &.{},
-        .defunct = true,
-    };
 
     /// Initialize our shader set.
     ///
@@ -334,7 +332,7 @@ pub const BgImage = extern struct {
 
 /// Initialize the MTLLibrary. A MTLLibrary is a collection of shaders.
 fn initLibrary(device: objc.Object) !objc.Object {
-    const start: std.Io.Timestamp = .now(global.io(), .awake);
+    const start = try std.time.Instant.now();
 
     const data = try macos.dispatch.Data.create(
         @embedFile("ghostty_metallib"),
@@ -354,7 +352,8 @@ fn initLibrary(device: objc.Object) !objc.Object {
     );
     try checkError(err);
 
-    log.debug("shader library loaded time={}us", .{start.untilNow(global.io(), .awake).toMicroseconds()});
+    const end = try std.time.Instant.now();
+    log.debug("shader library loaded time={}us", .{end.since(start) / std.time.ns_per_us});
 
     return library;
 }

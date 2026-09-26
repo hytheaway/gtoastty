@@ -368,11 +368,12 @@ pub const RemapSet = struct {
             const to = entry.value_ptr.*;
 
             var buf: [64]u8 = undefined;
-            var writer: std.Io.Writer = .fixed(&buf);
-            formatMod(&writer, from) catch return error.OutOfMemory;
+            var fbs = std.io.fixedBufferStream(&buf);
+            const writer = fbs.writer();
+            formatMod(writer, from) catch return error.OutOfMemory;
             writer.writeByte('=') catch return error.OutOfMemory;
-            formatMod(&writer, to) catch return error.OutOfMemory;
-            try formatter.formatEntry([]const u8, writer.buffered());
+            formatMod(writer, to) catch return error.OutOfMemory;
+            try formatter.formatEntry([]const u8, fbs.getWritten());
         }
     }
 

@@ -28,17 +28,12 @@ class MockView: NSView, Codable, Identifiable {
 
 struct SplitTreeTests {
     /// Creates a two-view horizontal split tree (view1 | view2).
-    static func makeHorizontalSplit() throws -> (SplitTree<MockView>, MockView, MockView) {
+    private func makeHorizontalSplit() throws -> (SplitTree<MockView>, MockView, MockView) {
         let view1 = MockView()
         let view2 = MockView()
         var tree = SplitTree<MockView>(view: view1)
         tree = try tree.inserting(view: view2, at: view1, direction: .right)
         return (tree, view1, view2)
-    }
-
-    /// Creates a two-view horizontal split tree (view1 | view2).
-    private func makeHorizontalSplit() throws -> (SplitTree<MockView>, MockView, MockView) {
-        try Self.makeHorizontalSplit()
     }
 
     // MARK: - Empty and Non-Empty

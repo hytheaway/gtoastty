@@ -2,39 +2,8 @@
 #include <stdio.h>
 #include <ghostty/vt.h>
 
-//! [sgr-basic]
-void basic_example() {
+int main() {
   // Create parser
-  GhosttySgrParser parser;
-  GhosttyResult result = ghostty_sgr_new(NULL, &parser);
-  assert(result == GHOSTTY_SUCCESS);
-
-  // Parse "bold, red foreground" sequence: ESC[1;31m
-  uint16_t params[] = {1, 31};
-  result = ghostty_sgr_set_params(parser, params, NULL, 2);
-  assert(result == GHOSTTY_SUCCESS);
-
-  // Iterate through attributes
-  GhosttySgrAttribute attr;
-  while (ghostty_sgr_next(parser, &attr)) {
-    switch (attr.tag) {
-      case GHOSTTY_SGR_ATTR_BOLD:
-        printf("Bold enabled\n");
-        break;
-      case GHOSTTY_SGR_ATTR_FG_8:
-        printf("Foreground color: %d\n", attr.value.fg_8);
-        break;
-      default:
-        break;
-    }
-  }
-
-  // Cleanup
-  ghostty_sgr_free(parser);
-}
-//! [sgr-basic]
-
-void advanced_example() {
   GhosttySgrParser parser;
   GhosttyResult result = ghostty_sgr_new(NULL, &parser);
   assert(result == GHOSTTY_SUCCESS);
@@ -57,9 +26,10 @@ void advanced_example() {
   result = ghostty_sgr_set_params(parser, params, separators, sizeof(params) / sizeof(params[0]));
   assert(result == GHOSTTY_SUCCESS);
 
-  printf("\nParsing Kakoune SGR sequence:\n");
+  printf("Parsing Kakoune SGR sequence:\n");
   printf("ESC[4:3;38;2;51;51;51;48;2;170;170;170;58;2;255;97;136m\n\n");
 
+  // Iterate through attributes
   GhosttySgrAttribute attr;
   int count = 0;
   while (ghostty_sgr_next(parser, &attr)) {
@@ -154,11 +124,8 @@ void advanced_example() {
   }
 
   printf("\nTotal attributes parsed: %d\n", count);
-  ghostty_sgr_free(parser);
-}
 
-int main() {
-  basic_example();
-  advanced_example();
+  // Cleanup
+  ghostty_sgr_free(parser);
   return 0;
 }

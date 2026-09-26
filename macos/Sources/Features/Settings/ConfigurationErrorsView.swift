@@ -46,11 +46,8 @@ struct ConfigurationErrorsView<ViewModel: ConfigurationErrorsViewModel>: View {
             HStack {
                 Spacer()
                 Button("Ignore") { model.errors = [] }
-                    .keyboardShortcut(.cancelAction)
                 Button("Reload Configuration") { reloadConfig() }
-                    .keyboardShortcut(.defaultAction)
             }
-            .controlSize(.large)
             .padding([.bottom, .trailing])
         }
         .frame(minWidth: 480, maxWidth: 960, minHeight: 270)

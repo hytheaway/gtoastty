@@ -1,6 +1,5 @@
 const std = @import("std");
 const sfnt = @import("sfnt.zig");
-const compat_reader = @import("../../lib/compat/reader.zig");
 
 pub const FSSelection = packed struct(sfnt.uint16) {
     /// Font contains italic or oblique glyphs, otherwise they are upright.
@@ -349,17 +348,21 @@ pub const OS2 = struct {
     usUpperOpticalPointSize: ?u16 = null,
 
     /// Parse the table from raw data.
-    pub fn init(data: []const u8) (error{OS2VersionNotSupported} || std.Io.Reader.Error)!OS2 {
-        var reader: std.Io.Reader = .fixed(data);
+    pub fn init(data: []const u8) error{
+        EndOfStream,
+        OS2VersionNotSupported,
+    }!OS2 {
+        var fbs = std.io.fixedBufferStream(data);
+        const reader = fbs.reader();
 
-        const version = try compat_reader.readerInt(&reader, sfnt.uint16, .big);
+        const version = try reader.readInt(sfnt.uint16, .big);
 
         // Return to the start, cause the version is part of the struct.
-        reader.seek = 0;
+        try fbs.seekTo(0);
 
         switch (version) {
             5 => {
-                const table = try compat_reader.readStructEndian(&reader, OS2v5, .big);
+                const table = try reader.readStructEndian(OS2v5, .big);
                 return .{
                     .version = table.version,
                     .xAvgCharWidth = table.xAvgCharWidth,
@@ -403,7 +406,7 @@ pub const OS2 = struct {
                 };
             },
             4, 3, 2 => {
-                const table = try compat_reader.readStructEndian(&reader, OS2v4_3_2, .big);
+                const table = try reader.readStructEndian(OS2v4_3_2, .big);
                 return .{
                     .version = table.version,
                     .xAvgCharWidth = table.xAvgCharWidth,
@@ -445,7 +448,7 @@ pub const OS2 = struct {
                 };
             },
             1 => {
-                const table = try compat_reader.readStructEndian(&reader, OS2v1, .big);
+                const table = try reader.readStructEndian(OS2v1, .big);
                 return .{
                     .version = table.version,
                     .xAvgCharWidth = table.xAvgCharWidth,
@@ -482,7 +485,7 @@ pub const OS2 = struct {
                 };
             },
             0 => {
-                const table = try compat_reader.readStructEndian(&reader, OS2v0, .big);
+                const table = try reader.readStructEndian(OS2v0, .big);
                 return .{
                     .version = table.version,
                     .xAvgCharWidth = table.xAvgCharWidth,

@@ -1,7 +1,6 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const global = @import("../global.zig");
-const xev = global.xev;
+const xev = @import("../global.zig").xev;
 const renderer = @import("../renderer.zig");
 const termio = @import("../termio.zig");
 const BlockingQueue = @import("../datastruct/main.zig").BlockingQueue;
@@ -47,7 +46,6 @@ pub const Mailbox = union(enum) {
     pub fn deinit(self: *Mailbox, alloc: Allocator) void {
         switch (self.*) {
             .spsc => |*v| {
-                while (v.queue.pop(global.io())) |msg| msg.deinit();
                 v.queue.destroy(alloc);
                 v.wakeup.deinit();
             },
@@ -63,13 +61,13 @@ pub const Mailbox = union(enum) {
     pub fn send(
         self: *Mailbox,
         msg: termio.Message,
-        mutex: ?*std.Io.Mutex,
+        mutex: ?*std.Thread.Mutex,
     ) void {
         switch (self.*) {
             .spsc => |*mb| send: {
                 // Try to write to the queue with an instant timeout. This is the
                 // fast path because we can queue without a lock.
-                if (mb.queue.push(global.io(), msg, .{ .instant = {} }) > 0) break :send;
+                if (mb.queue.push(msg, .{ .instant = {} }) > 0) break :send;
 
                 // If we enter this conditional, the queue is full. We wake up
                 // the writer thread so that it can process messages to clear up
@@ -77,7 +75,6 @@ pub const Mailbox = union(enum) {
                 // lock so we need to unlock.
                 mb.wakeup.notify() catch |err| {
                     log.warn("failed to wake up writer, data will be dropped err={}", .{err});
-                    msg.deinit();
                     return;
                 };
 
@@ -90,9 +87,9 @@ pub const Mailbox = union(enum) {
                 // are other messages in the writer queue (resize, focus) that
                 // could acquire the lock. This is why we have to release our lock
                 // here.
-                if (mutex) |m| m.unlock(global.io());
-                defer if (mutex) |m| m.lockUncancelable(global.io());
-                if (mb.queue.push(global.io(), msg, .{ .forever = {} }) == 0) msg.deinit();
+                if (mutex) |m| m.unlock();
+                defer if (mutex) |m| m.lock();
+                _ = mb.queue.push(msg, .{ .forever = {} });
             },
         }
     }

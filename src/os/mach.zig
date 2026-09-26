@@ -46,9 +46,6 @@ pub fn taggedPageAllocator(tag: VMTag) Allocator {
 /// This is based heavily on the Zig 0.15.2 PageAllocator implementation,
 /// with only the posix implementation. Zig 0.15.2 is MIT licensed.
 const TaggedPageAllocator = struct {
-    // Static local next_mmap_addr_hint since this has been removed from stdlib now
-    var next_mmap_addr_hint: ?[*]align(std.heap.page_size_min) u8 = null;
-
     pub const vtable: Allocator.VTable = .{
         .alloc = alloc,
         .resize = resize,
@@ -95,11 +92,11 @@ const TaggedPageAllocator = struct {
             aligned_len
         else
             mem.alignForward(usize, aligned_len + max_drop_len, page_size);
-        const hint = @atomicLoad(@TypeOf(next_mmap_addr_hint), &next_mmap_addr_hint, .unordered);
+        const hint = @atomicLoad(@TypeOf(std.heap.next_mmap_addr_hint), &std.heap.next_mmap_addr_hint, .unordered);
         const slice = std.posix.mmap(
             hint,
             overalloc_len,
-            .{ .READ = true, .WRITE = true },
+            std.posix.PROT.READ | std.posix.PROT.WRITE,
             .{ .TYPE = .PRIVATE, .ANONYMOUS = true },
             tag.make(),
             0,
@@ -113,7 +110,7 @@ const TaggedPageAllocator = struct {
         const remaining_len = overalloc_len - drop_len;
         if (remaining_len > aligned_len) std.posix.munmap(@alignCast(result_ptr[aligned_len..remaining_len]));
         const new_hint: [*]align(std.heap.page_size_min) u8 = @alignCast(result_ptr + aligned_len);
-        _ = @cmpxchgStrong(@TypeOf(next_mmap_addr_hint), &next_mmap_addr_hint, hint, new_hint, .monotonic, .monotonic);
+        _ = @cmpxchgStrong(@TypeOf(std.heap.next_mmap_addr_hint), &std.heap.next_mmap_addr_hint, hint, new_hint, .monotonic, .monotonic);
         return result_ptr;
     }
 

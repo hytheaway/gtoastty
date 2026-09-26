@@ -5,15 +5,15 @@ const Command = @import("../../osc.zig").Command;
 
 /// Parse OSC 7
 pub fn parse(parser: *Parser, _: ?u8) ?*Command {
-    const cap = if (parser.capture) |*c| c else {
+    const writer = parser.writer orelse {
         parser.state = .invalid;
         return null;
     };
-    cap.writer.writeByte(0) catch {
+    writer.writeByte(0) catch {
         parser.state = .invalid;
         return null;
     };
-    const data = cap.trailing();
+    const data = writer.buffered();
     parser.command = .{
         .report_pwd = .{
             .value = data[0 .. data.len - 1 :0],

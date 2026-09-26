@@ -30,8 +30,8 @@ class UpdateViewModel: ObservableObject {
             return "Downloading…"
         case .extracting(let extracting):
             return String(format: "Preparing: %.0f%%", extracting.progress * 100)
-        case let .installing(install):
-            return install.appcastItem != nil ? "Restart to Complete Update" : "Installing…"
+        case .installing(let install):
+            return install.isAutoUpdate ? "Restart to Complete Update" : "Installing…"
         case .notFound:
             return "No Updates Available"
         case .error(let err):
@@ -93,11 +93,7 @@ class UpdateViewModel: ObservableObject {
         case .extracting:
             return "Extracting and preparing the update"
         case let .installing(install):
-            if let item = install.appcastItem {
-                return "The update is ready. Version: \(item.displayVersionString)"
-            } else {
-                return "Installing update and preparing to restart"
-            }
+            return install.isAutoUpdate ? "Restart to Complete Update" : "Installing update and preparing to restart"
         case .notFound:
             return "You are running the latest version"
         case .error:
@@ -189,22 +185,8 @@ enum UpdateState: Equatable {
     case extracting(Extracting)
     case installing(Installing)
 
-    /// True if we're installing an update triggered manually.
-    var shouldTerminateWithoutWarning: Bool {
-        if case .installing(let installing) = self {
-            return installing.appcastItem == nil
-        } else {
-            return false
-        }
-    }
-
-    var isHidden: Bool {
+    var isIdle: Bool {
         if case .idle = self { return true }
-        if case .installing(let installing) = self {
-            // Hide the update pill when installing is triggered by auto update.
-            // There will be an alert when users check the updates themselves.
-            return installing.appcastItem != nil
-        }
         return false
     }
 
@@ -223,51 +205,30 @@ enum UpdateState: Equatable {
         }
     }
 
-    var isCancellable: Bool {
-        cancelAction != nil
-    }
-
     func cancel() {
-        cancelAction?()
-    }
-
-    private var cancelAction: (() -> Void)? {
         switch self {
-        case .idle:
-            nil
-        case .permissionRequest:
-            nil
         case .checking(let checking):
-            checking.cancel
+            checking.cancel()
         case .updateAvailable(let available):
-            { available.reply(.dismiss) }
+            available.reply(.dismiss)
         case .downloading(let downloading):
-            downloading.cancel
+            downloading.cancel()
         case .notFound(let notFound):
-            notFound.acknowledgement
+            notFound.acknowledgement()
         case .error(let err):
-            err.dismiss
-        case .extracting:
-            nil
-        case .installing:
-            nil
+            err.dismiss()
+        default:
+            break
         }
     }
 
     /// Confirms or accepts the current update state.
     /// - For available updates: begins installation
     /// - For ready-to-install: proceeds with installation
-    /// - For installing: suppress termination warnings and restart
-    mutating func confirm() {
+    func confirm() {
         switch self {
         case .updateAvailable(let available):
             available.reply(.install)
-        case .installing(let installing):
-            // Remove appcastItem so we can restart without any other alerts.
-            var suppressTerminationWarnings = installing
-            suppressTerminationWarnings.appcastItem = nil
-            self = .installing(suppressTerminationWarnings)
-            installing.retryTerminatingApplication()
         default:
             break
         }
@@ -291,8 +252,8 @@ enum UpdateState: Equatable {
             return lDown.progress == rDown.progress && lDown.expectedLength == rDown.expectedLength
         case (.extracting(let lExt), .extracting(let rExt)):
             return lExt.progress == rExt.progress
-        case (.installing(let lhs), .installing(let rhs)):
-            return lhs.appcastItem?.displayVersionString == rhs.appcastItem?.displayVersionString
+        case (.installing(let lInstall), .installing(let rInstall)):
+            return lInstall.isAutoUpdate == rInstall.isAutoUpdate
         default:
             return false
         }
@@ -403,14 +364,9 @@ enum UpdateState: Equatable {
     }
 
     struct Installing {
-        /// Non-nil if this state is triggered by auto update
-        var appcastItem: SUAppcastItem?
+        /// True if this state is triggered by ``Ghostty/UpdateDriver/updater(_:willInstallUpdateOnQuit:immediateInstallationBlock:)``
+        var isAutoUpdate = false
         let retryTerminatingApplication: () -> Void
-
-        var releaseNotes: ReleaseNotes? {
-            guard let appcastItem else { return nil }
-            let currentCommit = Bundle.main.infoDictionary?["GhosttyCommit"] as? String
-            return ReleaseNotes(displayVersionString: appcastItem.displayVersionString, currentCommit: currentCommit)
-        }
+        let dismiss: () -> Void
     }
 }

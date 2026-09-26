@@ -22,7 +22,6 @@ extension KeyboardShortcut: @retroactive CustomStringConvertible {
         case .return: keyString = "⏎"
         case .escape: keyString = "⎋"
         case .delete: keyString = "⌫"
-        case .deleteForward: keyString = "⌦"
         case .space: keyString = "␣"
         case .tab: keyString = "⇥"
         case .upArrow: keyString = "▲"

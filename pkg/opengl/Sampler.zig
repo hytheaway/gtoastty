@@ -1,7 +1,7 @@
 const Sampler = @This();
 
 const std = @import("std");
-const c = @import("opengl_c");
+const c = @import("c.zig").c;
 const errors = @import("errors.zig");
 const glad = @import("glad.zig");
 const Texture = @import("Texture.zig");
@@ -24,25 +24,16 @@ pub fn bind(v: Sampler, index: c_uint) !void {
 
 pub fn parameter(
     self: Sampler,
-    comptime name: Texture.Parameter,
-    value: name.Type(),
+    name: Texture.Parameter,
+    value: anytype,
 ) errors.Error!void {
-    const T = name.Type();
-
-    switch (T) {
+    switch (@TypeOf(value)) {
         c.GLint => glad.context.SamplerParameteri.?(
             self.id,
             @intFromEnum(name),
             value,
         ),
-        else => switch (@typeInfo(T)) {
-            .@"enum" => glad.context.SamplerParameteri.?(
-                self.id,
-                @intFromEnum(name),
-                @intFromEnum(value),
-            ),
-            else => @compileLog("unsupported parameter type", T),
-        },
+        else => unreachable,
     }
     try errors.getError();
 }

@@ -1,4 +1,6 @@
-const lib = @import("lib.zig");
+const build_options = @import("terminal_options");
+const lib = @import("../lib/main.zig");
+const lib_target: lib.Target = if (build_options.c_abi) .c else .zig;
 
 /// C0 (7-bit) control characters from ANSI.
 ///
@@ -50,9 +52,19 @@ pub const RenditionAspect = enum(u16) {
     _,
 };
 
+/// The device attribute request type (ESC [ c).
+pub const DeviceAttributeReq = lib.Enum(
+    lib_target,
+    &.{
+        "primary", // Blank
+        "secondary", // >
+        "tertiary", // =
+    },
+);
+
 /// Possible cursor styles (ESC [ q)
 pub const CursorStyle = lib.Enum(
-    lib.target,
+    lib_target,
     &.{
         "default",
         "blinking_block",
@@ -76,7 +88,7 @@ pub const StatusLineType = enum(u16) {
 
 /// The display to target for status updates (DECSASD).
 pub const StatusDisplay = lib.Enum(
-    lib.target,
+    lib_target,
     &.{
         "main",
         "status_line",
@@ -86,7 +98,7 @@ pub const StatusDisplay = lib.Enum(
 /// The possible modify key formats to ESC[>{a};{b}m
 /// Note: this is not complete, we should add more as we support more
 pub const ModifyKeyFormat = lib.Enum(
-    lib.target,
+    lib_target,
     &.{
         "legacy",
         "cursor_keys",
@@ -99,11 +111,8 @@ pub const ModifyKeyFormat = lib.Enum(
 
 /// The protection modes that can be set for the terminal. See DECSCA and
 /// ESC V, W.
-pub const ProtectedMode = lib.Enum(
-    lib.target,
-    &.{
-        "off",
-        "iso", // ESC V, W
-        "dec", // CSI Ps " q
-    },
-);
+pub const ProtectedMode = enum {
+    off,
+    iso, // ESC V, W
+    dec, // CSI Ps " q
+};

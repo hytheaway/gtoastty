@@ -1,9 +1,37 @@
 import SwiftUI
 import UserNotifications
 import GhosttyKit
-import System
 
 extension Ghostty {
+    /// Render a terminal for the active app in the environment.
+    struct Terminal: View {
+        @EnvironmentObject private var ghostty: Ghostty.App
+
+        var body: some View {
+            if let app = self.ghostty.app {
+                SurfaceForApp(app) { surfaceView in
+                    SurfaceWrapper(surfaceView: surfaceView)
+                }
+            }
+        }
+    }
+
+    /// Yields a SurfaceView for a ghostty app that can then be used however you want.
+    struct SurfaceForApp<Content: View>: View {
+        let content: ((SurfaceView) -> Content)
+
+        @StateObject private var surfaceView: SurfaceView
+
+        init(_ app: ghostty_app_t, @ViewBuilder content: @escaping ((SurfaceView) -> Content)) {
+            _surfaceView = StateObject(wrappedValue: SurfaceView(app))
+            self.content = content
+        }
+
+        var body: some View {
+            content(surfaceView)
+        }
+    }
+
     struct SurfaceWrapper: View {
         // The surface to create a view for. This must be created upstream. As long as this
         // remains the same, the surface that is being rendered remains the same.
@@ -19,8 +47,13 @@ extension Ghostty {
         // Maintain whether our window has focus (is key) or not
         @State private var windowFocus: Bool = true
 
+        // True if we're hovering over the left URL view, so we can show it on the right.
+        @State private var isHoveringURLLeft: Bool = false
+
+        #if canImport(AppKit)
         // Observe SecureInput to detect when its enabled
         @ObservedObject private var secureInput = SecureInput.shared
+        #endif
 
         @EnvironmentObject private var ghostty: Ghostty.App
         @Environment(\.ghosttyLastFocusedSurface) private var lastFocusedSurface
@@ -37,14 +70,17 @@ extension Ghostty {
                 // is up to date. See TerminalSurfaceView for why we don't use the NSView
                 // resize callback.
                 GeometryReader { geo in
+                    #if canImport(AppKit)
                     let pubBecomeKey = center.publisher(for: NSWindow.didBecomeKeyNotification)
                     let pubResign = center.publisher(for: NSWindow.didResignKeyNotification)
+                    #endif
 
                     SurfaceRepresentable(view: surfaceView, size: geo.size)
                         .focused($surfaceFocus)
                         .focusedValue(\.ghosttySurfacePwd, surfaceView.pwd)
                         .focusedValue(\.ghosttySurfaceView, surfaceView)
                         .focusedValue(\.ghosttySurfaceCellSize, surfaceView.cellSize)
+                    #if canImport(AppKit)
                         .onReceive(pubBecomeKey) { notification in
                             guard let window = notification.object as? NSWindow else { return }
                             guard let surfaceWindow = surfaceView.window else { return }
@@ -57,6 +93,7 @@ extension Ghostty {
                                 windowFocus = false
                             }
                         }
+                    #endif
 
                     // If our geo size changed then we show the resize overlay as configured.
                     if let surfaceSize = surfaceView.surfaceSize {
@@ -83,6 +120,7 @@ extension Ghostty {
                     .transition(.opacity)
                 }
 
+#if canImport(AppKit)
                 // Readonly indicator badge
                 if surfaceView.readonly {
                     ReadonlyBadge {
@@ -95,22 +133,53 @@ extension Ghostty {
                     keyTables: surfaceView.keyTables,
                     keySequence: surfaceView.keySequence
                 )
-                .zIndex(1)
+#endif
 
-                VStack(spacing: 0) {
-                    // If we have a URL from hovering a link, we show that.
-                    if let url = surfaceView.hoverUrl {
-                        URLHoverBanner(url: url)
-                    }
+                // If we have a URL from hovering a link, we show that.
+                if let url = surfaceView.hoverUrl {
+                    let padding: CGFloat = 5
+                    let cornerRadius: CGFloat = 9
+                    ZStack {
+                        HStack {
+                            Spacer()
+                            VStack(alignment: .leading) {
+                                Spacer()
 
-                    // Show a bar to indicate a child process has exited.
-                    if let msg = surfaceView.childExitedMessage {
-                        ChildExitedMessageBar(msg: msg)
-                            .font(.system(size: min(surfaceView.cellSize.height * 0.8, 30)))
+                                Text(verbatim: url)
+                                    .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                                    .background(
+                                        UnevenRoundedRectangle(cornerRadii: .init(topLeading: cornerRadius))
+                                            .fill(.background)
+                                    )
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .opacity(isHoveringURLLeft ? 1 : 0)
+                            }
+                        }
+
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Spacer()
+
+                                Text(verbatim: url)
+                                    .padding(.init(top: padding, leading: padding, bottom: padding, trailing: padding))
+                                    .background(
+                                        UnevenRoundedRectangle(cornerRadii: .init(topTrailing: cornerRadius))
+                                            .fill(.background)
+                                    )
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .opacity(isHoveringURLLeft ? 0 : 1)
+                                    .onHover(perform: { hovering in
+                                        isHoveringURLLeft = hovering
+                                    })
+                            }
+                            Spacer()
+                        }
                     }
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
+                #if canImport(AppKit)
                 // If we have secure input enabled and we're the focused surface and window
                 // then we want to show the secure input overlay.
                 if ghostty.config.secureInputIndication &&
@@ -119,6 +188,7 @@ extension Ghostty {
                     windowFocus {
                     SecureInputOverlay()
                 }
+                #endif
 
                 // Search overlay
                 if let searchState = surfaceView.searchState {
@@ -126,7 +196,10 @@ extension Ghostty {
                         surfaceView: surfaceView,
                         searchState: searchState,
                         onClose: {
-                            surfaceView.endSearch()
+#if canImport(AppKit)
+                            Ghostty.moveFocus(to: surfaceView)
+#endif
+                            surfaceView.searchState = nil
                         }
                     )
                 }
@@ -161,13 +234,15 @@ extension Ghostty {
                     }
                 }
 
+                #if canImport(AppKit)
                 // Grab handle for dragging the window. We want this to appear at the very
                 // top Z-index os it isn't faded by the unfocused overlay.
-                SurfaceGrabHandle(
-                    surfaceView: surfaceView,
-                    dragHandle: ghostty.config.dragHandle,
-                )
+                //
+                // This is disabled except on macOS because it uses AppKit drag/drop APIs.
+                SurfaceGrabHandle(surfaceView: surfaceView)
+                #endif
             }
+
         }
     }
 
@@ -337,11 +412,7 @@ extension Ghostty {
         var body: some View {
             GeometryReader { geo in
                 HStack(spacing: 4) {
-                    BackportSelectionTextField(
-                        "Search",
-                        text: $searchState.needle.text,
-                        selection: $searchState.needle.selection
-                    )
+                    TextField("Search", text: $searchState.needle)
                     .textFieldStyle(.plain)
                     .frame(width: 180)
                     .padding(.leading, 8)
@@ -365,38 +436,28 @@ extension Ghostty {
                                 .padding(.trailing, 8)
                         }
                     }
-                    .onChange(of: searchState.needle.text) { _ in
-                        searchState.writePasteboardNeedle()
-                    }
-                    .onReceive(
-                        NotificationCenter.default.publisher(
-                            for: NSApplication.didBecomeActiveNotification
-                        )
-                    ) { _ in
-                        // When the app becomes active, we want to check for external changes
-                        // to our synced needle.
-                        searchState.readPasteboardNeedle()
-                    }
-                    .onSubmit {
-                        _ = surfaceView.navigateSearchToNext()
-                    }
+#if canImport(AppKit)
                     .onExitCommand {
-                        if searchState.needle.text.isEmpty {
+                        if searchState.needle.isEmpty {
                             onClose()
                         } else {
                             Ghostty.moveFocus(to: surfaceView)
                         }
                     }
+#endif
                     .backport.onKeyPress(.return) { modifiers in
-                        if modifiers.contains(.shift) {
-                            _ = surfaceView.navigateSearchToPrevious()
-                            return .handled
-                        }
-                        return .ignored
+                        guard let surface = surfaceView.surface else { return .ignored }
+                        let action = modifiers.contains(.shift)
+                        ? "navigate_search:previous"
+                        : "navigate_search:next"
+                        ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))
+                        return .handled
                     }
 
                     Button(action: {
-                        _ = surfaceView.navigateSearchToNext()
+                        guard let surface = surfaceView.surface else { return }
+                        let action = "navigate_search:next"
+                        ghostty_surface_binding_action(surface, action, UInt(action.lengthOfBytes(using: .utf8)))
                     }, label: {
                         Image(systemName: "chevron.up")
                     })
@@ -461,7 +522,7 @@ extension Ghostty {
         }
 
         private var clipShape: some Shape {
-            if #available(macOS 26.0, *) {
+            if #available(iOS 26.0, macOS 26.0, *) {
                 return ConcentricRectangle(corners: .concentric(minimum: 8), isUniform: true)
             } else {
                 return RoundedRectangle(cornerRadius: 8)
@@ -541,7 +602,7 @@ extension Ghostty {
     /// A surface is terminology in Ghostty for a terminal surface, or a place where a terminal is actually drawn
     /// and interacted with. The word "surface" is used because a surface may represent a window, a tab,
     /// a split, a small preview pane, etc. It is ANYTHING that has a terminal drawn to it.
-    struct SurfaceRepresentable: NSViewRepresentable {
+    struct SurfaceRepresentable: OSViewRepresentable {
         /// The view to render for the terminal surface.
         let view: SurfaceView
 
@@ -555,19 +616,26 @@ extension Ghostty {
         /// The best approach is to wrap this view in a GeometryReader and pass in the geo.size.
         let size: CGSize
 
-        func makeNSView(context: Context) -> SurfaceScrollView {
+        #if canImport(AppKit)
+        func makeOSView(context: Context) -> SurfaceScrollView {
+            // On macOS, wrap the surface view in a scroll view
             return SurfaceScrollView(contentSize: size, surfaceView: view)
         }
 
-        func updateNSView(_ scrollView: SurfaceScrollView, context: Context) {
-            // SwiftUI may defer frame updates under system load (e.g., memory
-            // pressure, heavy I/O) or when external window managers trigger rapid
-            // layout changes. When that happens, the scroll view's bounds can
-            // fall out of sync with the size reported by GeometryReader, causing
-            // the surface to render at stale dimensions.
-            guard scrollView.bounds.size != size else { return }
-            scrollView.needsLayout = true
+        func updateOSView(_ scrollView: SurfaceScrollView, context: Context) {
+            // Nothing to do: SwiftUI automatically updates the frame size, and
+            // SurfaceScrollView handles the rest in response to that
         }
+        #else
+        func makeOSView(context: Context) -> SurfaceView {
+            // On iOS, return the surface view directly
+            return view
+        }
+
+        func updateOSView(_ view: SurfaceView, context: Context) {
+            view.sizeDidChange(size)
+        }
+        #endif
     }
 
     /// The configuration for a surface. For any configuration not set, defaults will be chosen from
@@ -576,13 +644,8 @@ extension Ghostty {
         /// Explicit font size to use in points
         var fontSize: Float32?
 
-        /// Explicit working directory. This is normalized on assignment to
-        /// remove any redundant and trailing path separators.
-        var workingDirectory: String? {
-            get { normalizedWorkingDirectory }
-            set { normalizedWorkingDirectory = newValue.map { FilePath($0).string } }
-        }
-        private var normalizedWorkingDirectory: String?
+        /// Explicit working directory to set
+        var workingDirectory: String?
 
         /// Explicit command to set
         var command: String?
@@ -594,7 +657,7 @@ extension Ghostty {
         var initialInput: String?
 
         /// Wait after the command
-        var waitAfterCommand: Bool = false
+        // var waitAfterCommand: Bool = false
 
         /// Context for surface creation
         var context: ghostty_surface_context_e = GHOSTTY_SURFACE_CONTEXT_WINDOW
@@ -628,17 +691,31 @@ extension Ghostty {
         func withCValue<T>(view: SurfaceView, _ body: (inout ghostty_surface_config_s) throws -> T) rethrows -> T {
             var config = ghostty_surface_config_new()
             config.userdata = Unmanaged.passUnretained(view).toOpaque()
+#if os(macOS)
             config.platform_tag = GHOSTTY_PLATFORM_MACOS
             config.platform = ghostty_platform_u(macos: ghostty_platform_macos_s(
                 nsview: Unmanaged.passUnretained(view).toOpaque()
             ))
             config.scale_factor = NSScreen.main!.backingScaleFactor
+#elseif os(iOS)
+            config.platform_tag = GHOSTTY_PLATFORM_IOS
+            config.platform = ghostty_platform_u(ios: ghostty_platform_ios_s(
+                uiview: Unmanaged.passUnretained(view).toOpaque()
+            ))
+            // Note that UIScreen.main is deprecated and we're supposed to get the
+            // screen through the view hierarchy instead. This means that we should
+            // probably set this to some default, then modify the scale factor through
+            // libghostty APIs when a UIView is attached to a window/scene. TODO.
+            config.scale_factor = UIScreen.main.scale
+#else
+#error("unsupported target")
+#endif
 
             // Zero is our default value that means to inherit the font size.
             config.font_size = fontSize ?? 0
 
             // Set wait after command
-            config.wait_after_command = waitAfterCommand
+            // config.wait_after_command = waitAfterCommand
 
             // Set context
             config.context = context
@@ -683,6 +760,7 @@ extension Ghostty {
         }
     }
 
+#if canImport(AppKit)
     /// Floating indicator that shows active key tables and pending key sequences.
     /// Displayed as a compact draggable pill that can be positioned at the top or bottom.
     struct KeyStateIndicator: View {
@@ -900,6 +978,7 @@ extension Ghostty {
             }
         }
     }
+#endif
 
     /// Visual overlay that shows a border around the edges when the bell rings with border feature enabled.
     struct BellBorderOverlay: View {
@@ -1063,6 +1142,7 @@ extension Ghostty {
         }
     }
 
+    #if canImport(AppKit)
     /// When changing the split state, or going full screen (native or non), the terminal view
     /// will lose focus. There has to be some nice SwiftUI-native way to fix this but I can't
     /// figure it out so we're going to do this hacky thing to bring focus back to the terminal
@@ -1116,6 +1196,7 @@ extension Ghostty {
             queue.async(execute: work)
         }
     }
+    #endif
 }
 
 // MARK: Surface Environment Keys
@@ -1174,12 +1255,26 @@ extension FocusedValues {
         typealias Value = String
     }
 
-    var ghosttySurfaceCellSize: CGSize? {
+    var ghosttySurfaceCellSize: OSSize? {
         get { self[FocusedGhosttySurfaceCellSize.self] }
         set { self[FocusedGhosttySurfaceCellSize.self] = newValue }
     }
 
     struct FocusedGhosttySurfaceCellSize: FocusedValueKey {
-        typealias Value = CGSize
+        typealias Value = OSSize
+    }
+}
+
+// MARK: Search State
+
+extension Ghostty.SurfaceView {
+    class SearchState: ObservableObject {
+        @Published var needle: String = ""
+        @Published var selected: UInt?
+        @Published var total: UInt?
+
+        init(from startSearch: Ghostty.Action.StartSearch) {
+            self.needle = startSearch.needle ?? ""
+        }
     }
 }

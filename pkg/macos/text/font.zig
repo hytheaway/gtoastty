@@ -18,17 +18,6 @@ pub const Font = opaque {
         ) orelse Allocator.Error.OutOfMemory;
     }
 
-    pub fn createWithName(name: *foundation.String, size: f32) Allocator.Error!*Font {
-        return @as(
-            ?*Font,
-            @ptrFromInt(@intFromPtr(c.CTFontCreateWithName(
-                @ptrCast(name),
-                size,
-                null,
-            ))),
-        ) orelse Allocator.Error.OutOfMemory;
-    }
-
     pub fn createForString(
         self: *Font,
         str: *foundation.String,
@@ -167,7 +156,7 @@ pub const Font = opaque {
         return @ptrFromInt(@intFromPtr(c.CTFontCopyFamilyName(@ptrCast(self))));
     }
 
-    pub fn copyDisplayName(self: *Font) ?*foundation.String {
+    pub fn copyDisplayName(self: *Font) *foundation.String {
         return @ptrFromInt(@intFromPtr(c.CTFontCopyDisplayName(@ptrCast(self))));
     }
 

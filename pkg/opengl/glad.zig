@@ -1,5 +1,5 @@
 const std = @import("std");
-const c = @import("opengl_c");
+const c = @import("c.zig").c;
 
 pub const Context = c.GladGLContext;
 

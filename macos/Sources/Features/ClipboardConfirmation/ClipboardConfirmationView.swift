@@ -2,7 +2,7 @@ import SwiftUI
 
 /// This delegate is notified of the completion result of the clipboard confirmation dialog.
 protocol ClipboardConfirmationViewDelegate: AnyObject {
-    func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, remember: Bool)
+    func clipboardConfirmationComplete(_ action: ClipboardConfirmationView.Action, _ request: Ghostty.ClipboardRequest)
 }
 
 /// The SwiftUI view for showing a clipboard confirmation dialog.
@@ -15,13 +15,11 @@ struct ClipboardConfirmationView: View {
             switch (action, reason) {
             case (.cancel, .paste):
                 return "Cancel"
-            case (.cancel, .osc_52_read), (.cancel, .osc_52_write),
-                 (.cancel, .kitty_read), (.cancel, .kitty_write):
+            case (.cancel, .osc_52_read), (.cancel, .osc_52_write):
                 return "Deny"
             case (.confirm, .paste):
                 return "Paste"
-            case (.confirm, .osc_52_read), (.confirm, .osc_52_write),
-                 (.confirm, .kitty_read), (.confirm, .kitty_write):
+            case (.confirm, .osc_52_read), (.confirm, .osc_52_write):
                 return "Allow"
             }
         }
@@ -33,23 +31,8 @@ struct ClipboardConfirmationView: View {
     /// The type of the clipboard request
     let request: Ghostty.ClipboardRequest
 
-    /// The human friendly name of the requesting program, when the
-    /// protocol carries one.
-    var programName: String?
-
-    /// True when the user's decision may be remembered as a session
-    /// grant, showing the remember toggle.
-    var canRemember: Bool = false
-
-    /// An image decoded from the request contents, shown scaled in
-    /// place of most of the text area when present.
-    var previewImage: NSImage?
-
     /// Optional delegate to get results. If this is nil, then this view will never close on its own.
     weak var delegate: ClipboardConfirmationViewDelegate?
-
-    /// Whether the user's decision should be remembered for the session.
-    @State private var remember: Bool = false
 
     /// Used to track if we should rehide on disappear
     @State private var cursorHiddenCount: UInt = 0
@@ -63,27 +46,14 @@ struct ClipboardConfirmationView: View {
                     .padding()
                     .frame(alignment: .center)
 
-                Text(request.text(name: programName))
+                Text(request.text())
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding()
             }
 
-            if let previewImage {
-                Image(nsImage: previewImage)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.horizontal)
-            } else {
-                TextEditor(text: .constant(contents))
-                    .focusable(false)
-                    .font(.system(.body, design: .monospaced))
-            }
-
-            if canRemember {
-                Toggle("Remember this choice for the session", isOn: $remember)
-                    .padding(.top, 4)
-            }
+            TextEditor(text: .constant(contents))
+                .focusable(false)
+                .font(.system(.body, design: .monospaced))
 
             HStack {
                 Spacer()
@@ -117,10 +87,10 @@ struct ClipboardConfirmationView: View {
     }
 
     private func onCancel() {
-        delegate?.clipboardConfirmationComplete(.cancel, remember: false)
+        delegate?.clipboardConfirmationComplete(.cancel, request)
     }
 
     private func onPaste() {
-        delegate?.clipboardConfirmationComplete(.confirm, remember: remember)
+        delegate?.clipboardConfirmationComplete(.confirm, request)
     }
 }

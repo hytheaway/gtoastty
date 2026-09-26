@@ -35,11 +35,11 @@ pub fn build(b: *std.Build) !void {
             .root_module = b.createModule(.{
                 .target = target,
                 .optimize = optimize,
-                .link_libc = true,
             }),
             .linkage = .static,
         });
-        lib.root_module.addIncludePath(b.path(""));
+        lib.linkLibC();
+        lib.addIncludePath(b.path(""));
 
         if (target.result.os.tag.isDarwin()) {
             const apple_sdk = @import("apple_sdk");
@@ -47,9 +47,9 @@ pub fn build(b: *std.Build) !void {
         }
 
         if (b.lazyDependency("gettext", .{})) |upstream| {
-            lib.root_module.addIncludePath(upstream.path("gettext-runtime/intl"));
-            lib.root_module.addIncludePath(upstream.path("gettext-runtime/intl/gnulib-lib"));
-            lib.root_module.addCSourceFiles(.{
+            lib.addIncludePath(upstream.path("gettext-runtime/intl"));
+            lib.addIncludePath(upstream.path("gettext-runtime/intl/gnulib-lib"));
+            lib.addCSourceFiles(.{
                 .root = upstream.path("gettext-runtime/intl"),
                 .files = srcs,
                 .flags = flags.items,

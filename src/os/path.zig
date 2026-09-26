@@ -6,19 +6,22 @@ const testing = std.testing;
 /// Search for "cmd" in the PATH and return the absolute path. This will
 /// always allocate if there is a non-null result. The caller must free the
 /// resulting value.
-pub fn expand(
-    io: std.Io,
-    alloc: Allocator,
-    environ_map: *const std.process.Environ.Map,
-    cmd: []const u8,
-) !?[]u8 {
+pub fn expand(alloc: Allocator, cmd: []const u8) !?[]u8 {
     // If the command already contains a slash, then we return it as-is
     // because it is assumed to be absolute or relative.
     if (std.mem.indexOfScalar(u8, cmd, '/') != null) {
         return try alloc.dupe(u8, cmd);
     }
 
-    const PATH = environ_map.get("PATH") orelse return null;
+    const PATH = switch (builtin.os.tag) {
+        .windows => blk: {
+            const win_path = std.process.getenvW(std.unicode.utf8ToUtf16LeStringLiteral("PATH")) orelse return null;
+            const path = try std.unicode.utf16LeToUtf8Alloc(alloc, win_path);
+            break :blk path;
+        },
+        else => std.posix.getenvZ("PATH") orelse return null,
+    };
+    defer if (builtin.os.tag == .windows) alloc.free(PATH);
 
     var path_buf: [std.fs.max_path_bytes]u8 = undefined;
     var it = std.mem.tokenizeScalar(u8, PATH, std.fs.path.delimiter);
@@ -36,8 +39,7 @@ pub fn expand(
         const full_path = path_buf[0..path_len :0];
 
         // Stat it
-        const f = std.Io.Dir.cwd().openFile(
-            io,
+        const f = std.fs.cwd().openFile(
             full_path,
             .{},
         ) catch |err| switch (err) {
@@ -50,9 +52,9 @@ pub fn expand(
             },
             else => return err,
         };
-        defer f.close(io);
-        const stat = try f.stat(io);
-        if (stat.kind != .directory and isExecutable(stat.permissions)) {
+        defer f.close();
+        const stat = try f.stat();
+        if (stat.kind != .directory and isExecutable(stat.mode)) {
             return try alloc.dupe(u8, full_path);
         }
     }
@@ -62,39 +64,26 @@ pub fn expand(
     return null;
 }
 
-fn isExecutable(perms: std.Io.File.Permissions) bool {
-    return switch (builtin.os.tag) {
-        .windows => true,
-        else => posix: {
-            break :posix switch (std.posix.mode_t) {
-                u0 => true,
-                else => perms.toMode() & 0o0111 != 0,
-            };
-        },
-    };
+fn isExecutable(mode: std.fs.File.Mode) bool {
+    if (builtin.os.tag == .windows) return true;
+    return mode & 0o0111 != 0;
 }
 
 // `uname -n` is the *nix equivalent of `hostname.exe` on Windows
 test "expand: hostname" {
-    var environ_map = try testing.environ.createMap(testing.allocator);
-    defer environ_map.deinit();
     const executable = if (builtin.os.tag == .windows) "hostname.exe" else "uname";
-    const path = (try expand(testing.io, testing.allocator, &environ_map, executable)).?;
+    const path = (try expand(testing.allocator, executable)).?;
     defer testing.allocator.free(path);
     try testing.expect(path.len > executable.len);
 }
 
 test "expand: does not exist" {
-    var environ_map = try testing.environ.createMap(testing.allocator);
-    defer environ_map.deinit();
-    const path = try expand(testing.io, testing.allocator, &environ_map, "thisreallyprobablydoesntexist123");
+    const path = try expand(testing.allocator, "thisreallyprobablydoesntexist123");
     try testing.expect(path == null);
 }
 
 test "expand: slash" {
-    var environ_map = try testing.environ.createMap(testing.allocator);
-    defer environ_map.deinit();
-    const path = (try expand(testing.io, testing.allocator, &environ_map, "foo/env")).?;
+    const path = (try expand(testing.allocator, "foo/env")).?;
     defer testing.allocator.free(path);
     try testing.expect(path.len == 7);
 }

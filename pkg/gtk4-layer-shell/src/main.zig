@@ -1,7 +1,8 @@
 const std = @import("std");
 
-const c = @import("gtk4_layer_shell_c");
-const gdk = @import("gdk");
+const c = @cImport({
+    @cInclude("gtk4-layer-shell.h");
+});
 const gtk = @import("gtk");
 
 pub const ShellLayer = enum(c_uint) {
@@ -58,10 +59,6 @@ pub fn setMargin(window: *gtk.Window, edge: ShellEdge, margin_size: c_int) void 
 
 pub fn setKeyboardMode(window: *gtk.Window, mode: KeyboardMode) void {
     c.gtk_layer_set_keyboard_mode(@ptrCast(window), @intFromEnum(mode));
-}
-
-pub fn setMonitor(window: *gtk.Window, monitor: ?*gdk.Monitor) void {
-    c.gtk_layer_set_monitor(@ptrCast(window), @ptrCast(monitor));
 }
 
 pub fn setNamespace(window: *gtk.Window, name: [:0]const u8) void {

@@ -5,6 +5,5 @@
     .paths = .{""},
     .dependencies = .{
         .apple_sdk = .{ .path = "../apple-sdk" },
-        .translate_c = .{ .path = "../translate-c" },
     },
 }

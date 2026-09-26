@@ -7,9 +7,7 @@ const cli = @import("../cli.zig");
 /// predictably named files under `cli/`.
 pub const Action = enum {
     ascii,
-    kitty,
     osc,
-    styled,
     utf8,
 
     /// Returns the struct associated with the action. The struct
@@ -23,32 +21,29 @@ pub const Action = enum {
     pub fn Struct(comptime action: Action) type {
         return switch (action) {
             .ascii => @import("cli/Ascii.zig"),
-            .kitty => @import("cli/Kitty.zig"),
             .osc => @import("cli/Osc.zig"),
-            .styled => @import("cli/Styled.zig"),
             .utf8 => @import("cli/Utf8.zig"),
         };
     }
 };
 
 /// An entrypoint for the synthetic generator CLI.
-pub fn main(init: std.process.Init) !void {
+pub fn main() !void {
     const alloc = std.heap.c_allocator;
-    const action_ = try cli.action.detectArgs(Action, alloc, init.minimal.args);
+    const action_ = try cli.action.detectArgs(Action, alloc);
     const action = action_ orelse return error.NoAction;
-    try mainAction(init.io, alloc, action, .{ .cli = init.minimal.args });
+    try mainAction(alloc, action, .cli);
 }
 
 pub const Args = union(enum) {
     /// The arguments passed to the CLI via argc/argv.
-    cli: std.process.Args,
+    cli,
 
-    /// Simple string arguments, parsed via ArgIteratorGeneral.
+    /// Simple string arguments, parsed via std.process.ArgIteratorGeneral.
     string: []const u8,
 };
 
 pub fn mainAction(
-    io: std.Io,
     alloc: Allocator,
     action: Action,
     args: Args,
@@ -56,14 +51,13 @@ pub fn mainAction(
     switch (action) {
         inline else => |comptime_action| {
             const Impl = Action.Struct(comptime_action);
-            try mainActionImpl(Impl, io, alloc, args);
+            try mainActionImpl(Impl, alloc, args);
         },
     }
 }
 
 fn mainActionImpl(
     comptime Impl: type,
-    io: std.Io,
     alloc: Allocator,
     args: Args,
 ) !void {
@@ -72,13 +66,13 @@ fn mainActionImpl(
     var opts: Options = .{};
     defer if (@hasDecl(Options, "deinit")) opts.deinit();
     switch (args) {
-        .cli => |process_args| {
-            var iter = try cli.args.argsIterator(alloc, process_args);
+        .cli => {
+            var iter = try cli.args.argsIterator(alloc);
             defer iter.deinit();
             try cli.args.parse(Options, alloc, &opts, &iter);
         },
         .string => |str| {
-            var iter = try std.process.Args.IteratorGeneral(.{}).init(
+            var iter = try std.process.ArgIteratorGeneral(.{}).init(
                 alloc,
                 str,
             );
@@ -88,13 +82,16 @@ fn mainActionImpl(
     }
 
     // TODO: Make this a command line option.
-    const seed: u64 = @truncate(@as(u96, @bitCast(std.Io.Timestamp.now(io, .real).toNanoseconds())));
+    const seed: u64 = @truncate(@as(
+        u128,
+        @bitCast(std.time.nanoTimestamp()),
+    ));
     var prng = std.Random.DefaultPrng.init(seed);
     const rand = prng.random();
 
     // Our output always goes to stdout.
     var buffer: [2048]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(io, &buffer);
+    var stdout_writer = std.fs.File.stdout().writer(&buffer);
     const writer = &stdout_writer.interface;
 
     // Create our implementation

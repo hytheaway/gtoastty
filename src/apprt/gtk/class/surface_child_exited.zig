@@ -106,11 +106,11 @@ const SurfaceChildExitedBanner = extern struct {
             return;
         };
         if (data.exit_code == 0) {
-            banner.as(adw.Banner).setTitle(i18n._("Command Succeeded"));
+            banner.as(adw.Banner).setTitle(i18n._("Command succeeded"));
             self.as(gtk.Widget).addCssClass("normal");
             self.as(gtk.Widget).removeCssClass("abnormal");
         } else {
-            banner.as(adw.Banner).setTitle(i18n._("Command Failed"));
+            banner.as(adw.Banner).setTitle(i18n._("Command failed"));
             self.as(gtk.Widget).removeCssClass("normal");
             self.as(gtk.Widget).addCssClass("abnormal");
         }

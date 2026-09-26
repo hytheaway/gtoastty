@@ -1,6 +1,6 @@
 const std = @import("std");
 const cli = @import("cli.zig");
-const global = @import("../global.zig");
+const state = &@import("../global.zig").state;
 
 const log = std.log.scoped(.benchmark);
 
@@ -19,7 +19,7 @@ export fn ghostty_benchmark_cli(
     };
 
     cli.mainAction(
-        global.alloc(),
+        state.alloc,
         action,
         .{ .string = std.mem.sliceTo(args, 0) },
     ) catch |err| {

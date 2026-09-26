@@ -12,8 +12,7 @@ template $GhosttyImguiWidget: Adw.Bin {
       // needs to be focusable so that we can receive events
       focusable: true;
       focus-on-click: true;
-      // Match GTK's shared context, which may use desktop GL or GLES.
-      allowed-apis: gl | gles;
+      allowed-apis: gl;
       realize => $realize();
       unrealize => $unrealize();
       resize => $resize();

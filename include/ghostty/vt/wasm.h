@@ -10,12 +10,11 @@
 #ifdef __wasm__
 
 #include <stddef.h>
-#include <ghostty/vt/types.h>
+#include <stdint.h>
 
 /** @defgroup wasm WebAssembly Utilities
  *
- * Convenience functions for working with the low-level C ABI in WebAssembly
- * builds.
+ * Convenience functions for allocating various types in WebAssembly builds.
  * **These are only available the libghostty-vt wasm module.**
  *
  * Ghostty relies on pointers to various types for ABI compatibility, and
@@ -28,64 +27,37 @@
  * your custom allocator. This is a very rare use case in the WebAssembly
  * world so these are optimized for simplicity.
  *
- * Use ghostty_wasm_alloc() and ghostty_wasm_free() for host-owned scratch
- * buffers and ABI values. Dynamic-language hosts can use ghostty_type_json()
- * to discover pointer and size_t widths, maximum alignment, byte order, and
- * the size and alignment of public C structs. Do not mix allocation families:
- * buffers returned by libghostty-vt allocating APIs must still be released
- * with ghostty_free(), and opaque handles must be released with their
- * type-specific destructor.
- *
- * ## Memory growth
- *
- * An exported function may grow Wasm linear memory when it allocates. Numeric
- * pointers and handles remain valid, but JavaScript ArrayBuffer, DataView, and
- * typed-array objects created before the growth may no longer cover the live
- * memory. Reacquire `exports.memory.buffer` immediately before every host-side
- * memory access. A host that caches views should recreate them whenever either
- * the buffer identity or its byte length changes.
- *
  * ## Example Usage
  *
- * Here's a simple example that creates a terminal, writes bytes, and safely
- * handles memory growth:
+ * Here's a simple example of using the Wasm utilities with the key encoder:
  *
  * @code
  * const { exports } = wasmInstance;
- * const memory = exports.memory;
- * let cachedBuffer = null;
- * let cachedLength = 0;
- * let cachedBytes = null;
+ * const view = new DataView(wasmMemory.buffer);
  *
- * function bytes() {
- *   const buffer = memory.buffer;
- *   if (buffer !== cachedBuffer || buffer.byteLength !== cachedLength) {
- *     cachedBuffer = buffer;
- *     cachedLength = buffer.byteLength;
- *     cachedBytes = new Uint8Array(buffer);
- *   }
- *   return cachedBytes;
- * }
+ * // Create key encoder
+ * const encoderPtr = exports.ghostty_wasm_alloc_opaque();
+ * exports.ghostty_key_encoder_new(null, encoderPtr);
+ * const encoder = view.getUint32(encoder, true);
  *
- * function check(result) {
- *   if (result !== 0) throw new Error(`libghostty-vt error: ${result}`);
- * }
+ * // Configure encoder with Kitty protocol flags
+ * const flagsPtr = exports.ghostty_wasm_alloc_u8();
+ * view.setUint8(flagsPtr, 0x1F);
+ * exports.ghostty_key_encoder_setopt(encoder, 5, flagsPtr);
  *
- * // One slot can be reused for every opaque-handle constructor.
- * const slot = exports.ghostty_wasm_alloc_opaque();
- * if (slot === 0) throw new Error("out of memory");
- * check(exports.ghostty_terminal_new(0, slot, 80, 24));
- * const terminal = exports.ghostty_wasm_take_opaque(slot);
+ * // Allocate output buffer and size pointer
+ * const bufferSize = 32;
+ * const bufPtr = exports.ghostty_wasm_alloc_u8_array(bufferSize);
+ * const writtenPtr = exports.ghostty_wasm_alloc_usize();
  *
- * const input = new TextEncoder().encode("Hello, world!");
- * const inputPtr = exports.ghostty_wasm_alloc(input.length);
- * if (inputPtr === 0) throw new Error("out of memory");
- * bytes().set(input, inputPtr); // Acquires the current memory after alloc.
- * exports.ghostty_terminal_vt_write(terminal, inputPtr, input.length);
+ * // Encode the key event
+ * exports.ghostty_key_encoder_encode(
+ *     encoder, eventPtr, bufPtr, bufferSize, writtenPtr
+ * );
  *
- * exports.ghostty_wasm_free(inputPtr, input.length);
- * exports.ghostty_terminal_free(terminal);
- * exports.ghostty_wasm_free_opaque(slot);
+ * // Read encoded output
+ * const bytesWritten = view.getUint32(writtenPtr, true);
+ * const encoded = new Uint8Array(wasmMemory.buffer, bufPtr, bytesWritten);
  * @endcode
  *
  * @remark The code above is pretty ugly! This is the lowest level interface
@@ -96,40 +68,13 @@
  */
 
 /**
- * Allocate caller-owned storage for a Wasm ABI value or scratch buffer.
- *
- * The returned address is aligned to the target's maximum C ABI alignment,
- * reported as `abi.max_alignment` by ghostty_type_json(). The memory is
- * uninitialized. A zero-length request returns NULL.
- *
- * The returned pointer must be released with ghostty_wasm_free() using the
- * exact same length.
- *
- * @param len Number of bytes to allocate
- * @return Pointer to allocated storage, or NULL if len is zero or allocation
- *         failed
- * @ingroup wasm
- */
-GHOSTTY_API void* ghostty_wasm_alloc(size_t len);
-
-/**
- * Free storage allocated by ghostty_wasm_alloc().
- *
- * @param ptr Pointer to free, or NULL (NULL is safely ignored)
- * @param len Original allocation length passed to ghostty_wasm_alloc()
- * @ingroup wasm
- */
-GHOSTTY_API void ghostty_wasm_free(void *ptr, size_t len);
-
-/**
  * Allocate an opaque pointer. This can be used for any opaque pointer
- * types such as GhosttyKeyEncoder, GhosttyKeyEvent, etc. The allocated slot
- * is initialized to NULL and may be reused across constructors.
+ * types such as GhosttyKeyEncoder, GhosttyKeyEvent, etc.
  *
  * @return Pointer to allocated opaque pointer, or NULL if allocation failed
  * @ingroup wasm
  */
-GHOSTTY_API void** ghostty_wasm_alloc_opaque(void);
+void** ghostty_wasm_alloc_opaque(void);
 
 /**
  * Free an opaque pointer allocated by ghostty_wasm_alloc_opaque().
@@ -137,21 +82,75 @@ GHOSTTY_API void** ghostty_wasm_alloc_opaque(void);
  * @param ptr Pointer to free, or NULL (NULL is safely ignored)
  * @ingroup wasm
  */
-GHOSTTY_API void ghostty_wasm_free_opaque(void **ptr);
+void ghostty_wasm_free_opaque(void **ptr);
 
 /**
- * Take an opaque handle from an out-parameter slot.
+ * Allocate an array of uint8_t values.
  *
- * Returns the handle currently stored in @p slot and resets the slot to NULL.
- * This function does not allocate, free the returned handle, or free the slot.
- * Always check the GhosttyResult returned by the function that populated the
- * slot before calling this function.
- *
- * @param slot Pointer to an opaque out-parameter slot, or NULL
- * @return Stored opaque handle, or NULL if slot or its value is NULL
+ * @param len Number of uint8_t elements to allocate
+ * @return Pointer to allocated array, or NULL if allocation failed
  * @ingroup wasm
  */
-GHOSTTY_API void* ghostty_wasm_take_opaque(void **slot);
+uint8_t* ghostty_wasm_alloc_u8_array(size_t len);
+
+/**
+ * Free an array allocated by ghostty_wasm_alloc_u8_array().
+ *
+ * @param ptr Pointer to the array to free, or NULL (NULL is safely ignored)
+ * @param len Length of the array (must match the length passed to alloc)
+ * @ingroup wasm
+ */
+void ghostty_wasm_free_u8_array(uint8_t *ptr, size_t len);
+
+/**
+ * Allocate an array of uint16_t values.
+ *
+ * @param len Number of uint16_t elements to allocate
+ * @return Pointer to allocated array, or NULL if allocation failed
+ * @ingroup wasm
+ */
+uint16_t* ghostty_wasm_alloc_u16_array(size_t len);
+
+/**
+ * Free an array allocated by ghostty_wasm_alloc_u16_array().
+ *
+ * @param ptr Pointer to the array to free, or NULL (NULL is safely ignored)
+ * @param len Length of the array (must match the length passed to alloc)
+ * @ingroup wasm
+ */
+void ghostty_wasm_free_u16_array(uint16_t *ptr, size_t len);
+
+/**
+ * Allocate a single uint8_t value.
+ *
+ * @return Pointer to allocated uint8_t, or NULL if allocation failed
+ * @ingroup wasm
+ */
+uint8_t* ghostty_wasm_alloc_u8(void);
+
+/**
+ * Free a uint8_t allocated by ghostty_wasm_alloc_u8().
+ *
+ * @param ptr Pointer to free, or NULL (NULL is safely ignored)
+ * @ingroup wasm
+ */
+void ghostty_wasm_free_u8(uint8_t *ptr);
+
+/**
+ * Allocate a single size_t value.
+ *
+ * @return Pointer to allocated size_t, or NULL if allocation failed
+ * @ingroup wasm
+ */
+size_t* ghostty_wasm_alloc_usize(void);
+
+/**
+ * Free a size_t allocated by ghostty_wasm_alloc_usize().
+ *
+ * @param ptr Pointer to free, or NULL (NULL is safely ignored)
+ * @ingroup wasm
+ */
+void ghostty_wasm_free_usize(size_t *ptr);
 
 /** @} */
 

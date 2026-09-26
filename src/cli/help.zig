@@ -2,7 +2,6 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const args = @import("args.zig");
 const Action = @import("ghostty.zig").Action;
-const global = @import("../global.zig");
 
 // Note that this options struct doesn't implement the `help` decl like other
 // actions. That is because the help command is special and wants to handle its
@@ -17,7 +16,7 @@ pub const Options = struct {
 };
 
 /// The `help` command shows general help about Ghostty. Recognized as either
-/// `-h`, `--help`, or like other actions `+help`.
+/// `-h, `--help`, or like other actions `+help`.
 ///
 /// You can also specify `--help` or `-h` along with any action such as
 /// `+list-themes` to see help for a specific action.
@@ -26,13 +25,13 @@ pub fn run(alloc: Allocator) !u8 {
     defer opts.deinit();
 
     {
-        var iter = try args.argsIterator(alloc, global.args());
+        var iter = try args.argsIterator(alloc);
         defer iter.deinit();
         try args.parse(Options, alloc, &opts, &iter);
     }
 
     var buffer: [2048]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(global.io(), &buffer);
+    var stdout_writer = std.fs.File.stdout().writer(&buffer);
     const stdout = &stdout_writer.interface;
     try stdout.writeAll(
         \\Usage: ghostty [+action] [options]

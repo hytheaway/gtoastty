@@ -27,10 +27,10 @@ pub const Typesetter = opaque {
     pub fn createLine(
         self: *Typesetter,
         range: foundation.c.CFRange,
-    ) Allocator.Error!*text.Line {
-        return @ptrCast(@constCast(c.CTTypesetterCreateLine(
+    ) *text.Line {
+        return @ptrFromInt(@intFromPtr(c.CTTypesetterCreateLine(
             @ptrCast(self),
             range,
-        ) orelse return error.OutOfMemory));
+        )));
     }
 };

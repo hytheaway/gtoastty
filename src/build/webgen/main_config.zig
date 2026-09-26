@@ -2,9 +2,9 @@ const std = @import("std");
 const Config = @import("../../config/Config.zig");
 const help_strings = @import("help_strings");
 
-pub fn main(init: std.process.Init) !void {
+pub fn main() !void {
     var buffer: [2048]u8 = undefined;
-    var stdout_writer = std.Io.File.stdout().writer(init.io, &buffer);
+    var stdout_writer = std.fs.File.stdout().writer(&buffer);
     const stdout = &stdout_writer.interface;
     try genConfig(stdout);
 }

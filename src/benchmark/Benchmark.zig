@@ -6,7 +6,6 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const macos = @import("macos");
 const build_config = @import("../build_config.zig");
-const global = @import("../global.zig");
 
 ptr: *anyopaque,
 vtable: VTable,
@@ -65,23 +64,21 @@ pub fn run(
         signpost.log.release();
     };
 
-    const start: std.Io.Timestamp = .now(global.io(), .awake);
+    const start = std.time.Instant.now() catch return error.BenchmarkFailed;
     while (true) {
         // Run our step function. If it fails, we return the error.
         try self.vtable.stepFn(self.ptr);
         result.iterations += 1;
 
         // Get our current monotonic time and check our exit conditions.
-        const now: std.Io.Timestamp = .now(global.io(), .awake);
-        const elapsed = start.durationTo(now).nanoseconds;
-        assert(elapsed >= 0);
+        const now = std.time.Instant.now() catch return error.BenchmarkFailed;
         const exit = switch (mode) {
             .once => true,
-            .duration => |ns| elapsed >= ns,
+            .duration => |ns| now.since(start) >= ns,
         };
 
         if (exit) {
-            result.duration = @as(u64, @intCast(std.math.clamp(elapsed, 0, std.math.maxInt(u64))));
+            result.duration = now.since(start);
             return result;
         }
     }
@@ -134,17 +131,12 @@ pub const VTable = struct {
 };
 
 test Benchmark {
-    // This test fails on FreeBSD and Windows so skip:
+    // This test fails on FreeBSD so skip:
     //
     // /home/runner/work/ghostty/ghostty/src/benchmark/Benchmark.zig:165:5: 0x3cd2de1 in decltest.Benchmark (ghostty-test)
     //     try testing.expect(result.duration > 0);
     //     ^
-    switch (builtin.os.tag) {
-        .freebsd,
-        .windows,
-        => return error.SkipZigTest,
-        else => {},
-    }
+    if (builtin.os.tag == .freebsd) return error.SkipZigTest;
 
     const testing = std.testing;
     const Simple = struct {

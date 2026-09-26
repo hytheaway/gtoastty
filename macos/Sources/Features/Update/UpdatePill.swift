@@ -15,7 +15,7 @@ struct UpdatePill: View {
     private let textFont = NSFont.systemFont(ofSize: 11, weight: .medium)
 
     var body: some View {
-        if !model.state.isHidden {
+        if !model.state.isIdle {
             pillButton
                 .popover(isPresented: $showPopover, arrowEdge: .bottom) {
                     UpdatePopoverView(model: model)
@@ -24,10 +24,10 @@ struct UpdatePill: View {
                 .onChange(of: model.state) { newState in
                     resetTask?.cancel()
                     if case .notFound(let notFound) = newState {
-                        resetTask = Task {
+                        resetTask = Task { [weak model] in
                             try? await Task.sleep(for: .seconds(5))
-                            guard !Task.isCancelled, case .notFound = model.state else { return }
-                            model.state = .idle
+                            guard !Task.isCancelled, case .notFound? = model?.state else { return }
+                            model?.state = .idle
                             notFound.acknowledgement()
                         }
                     } else {

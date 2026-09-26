@@ -274,19 +274,28 @@ enum UpdateSimulator {
         }
     }
 
-    private func simulateInstalling(_ viewModel: UpdateViewModel, appcastItem: SUAppcastItem? = nil) {
+    private func simulateInstalling(_ viewModel: UpdateViewModel) {
         viewModel.state = .installing(.init(
-            appcastItem: appcastItem,
             retryTerminatingApplication: {
                 print("Restart button clicked in simulator - resetting to idle")
                 viewModel.state = .idle
             },
+            dismiss: {
+                viewModel.state = .idle
+            }
         ))
     }
 
     private func simulateAutoUpdate(_ viewModel: UpdateViewModel) {
-        let item = SUAppcastItem.empty()
-        item.setValue("x.x.x", forKey: "_displayVersionString")
-        simulateInstalling(viewModel, appcastItem: item)
+        viewModel.state = .installing(.init(
+            isAutoUpdate: true,
+            retryTerminatingApplication: {
+                print("Restart button clicked in simulator - resetting to idle")
+                viewModel.state = .idle
+            },
+            dismiss: {
+                viewModel.state = .idle
+            }
+        ))
     }
 }

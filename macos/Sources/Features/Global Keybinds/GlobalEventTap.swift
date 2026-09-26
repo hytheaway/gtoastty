@@ -1,5 +1,4 @@
 import Cocoa
-import ApplicationServices
 import CoreGraphics
 import Carbon
 import OSLog
@@ -17,9 +16,10 @@ class GlobalEventTap {
 
     // The event tap used for global event listening. This is non-nil if it is
     // created.
-    fileprivate var eventTap: CFMachPort?
+    private var eventTap: CFMachPort?
 
-    // Polls Accessibility permission before enabling the global event tap.
+    // This is the timer used to retry enabling the global event tap if we
+    // don't have permissions.
     private var enableTimer: Timer?
 
     // Private init so it can't be constructed outside of our singleton
@@ -29,36 +29,29 @@ class GlobalEventTap {
         disable()
     }
 
-    // Enable the global event tap. This is safe to call if it is already enabled or
-    // waiting for Accessibility permission.
+    // Enable the global event tap. This is safe to call if it is already enabled.
+    // If enabling fails due to permissions, this will start a timer to retry since
+    // accessibility permissions take affect immediately.
     func enable() {
-        // If we already have a tap or we're already checking on a timer, do nothing.
-        guard eventTap == nil, enableTimer == nil else { return }
-
-        // Creating a CGEventTap without Accessibility permission leaks a Mach port
-        // inside CoreGraphics on each failed attempt. Request permission once and
-        // poll the non-leaking trust check instead of retrying tap creation.
-        if AXIsProcessTrusted() {
-            _ = tryEnable()
+        if eventTap != nil {
+            // Already enabled
             return
         }
 
-        // Ask macOS to prompt for Accessibility access. Approval happens
-        // asynchronously, so ignore the current result and poll below.
-        Self.logger.info("No accessibility permission detected, prompting...")
-        let options = [
-            kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true,
-        ] as CFDictionary
-        _ = AXIsProcessTrustedWithOptions(options)
+        // If we are already trying to enable, then stop the timer and restart it.
+        if let enableTimer {
+            enableTimer.invalidate()
+        }
 
-        // Check in a timer
-        enableTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self, AXIsProcessTrusted() else { return }
+        // Try to enable the event tap immediately. If this succeeds then we're done!
+        if tryEnable() {
+            return
+        }
 
-            // Stop polling before attempting creation. If creation fails for a
-            // reason other than permissions, we must not retry it indefinitely.
-            self.enableTimer?.invalidate()
-            self.enableTimer = nil
+        // Failed, probably due to permissions. The permissions dialog should've
+        // popped up. We retry on a timer since once the permissions are granted
+        // then they take affect immediately.
+        enableTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { _ in
             _ = self.tryEnable()
         }
     }
@@ -95,7 +88,10 @@ class GlobalEventTap {
                 callback: cgEventFlagsChangedHandler(proxy:type:cgEvent:userInfo:),
                 userInfo: nil
         ) else {
-            Self.logger.warning("creating global event tap failed despite Accessibility permission")
+            // Return false if creation failed. This is usually because we don't have
+            // Accessibility permissions but can probably be other reasons I don't
+            // know about.
+            Self.logger.debug("creating global event tap failed, missing permissions?")
             return false
         }
 
@@ -129,17 +125,6 @@ private func cgEventFlagsChangedHandler(
 ) -> Unmanaged<CGEvent>? {
     let result = Unmanaged.passUnretained(cgEvent)
 
-    // macOS disables the event tap if the callback is too slow or for other
-    // internal reasons. When that happens it sends this event type. We need
-    // to re-enable the tap or it stays dead forever.
-    if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
-        GlobalEventTap.logger.warning("global event tap was disabled by the system, re-enabling")
-        if let machPort = GlobalEventTap.shared.eventTap {
-            CGEvent.tapEnable(tap: machPort, enable: true)
-        }
-        return result
-    }
-
     // We only care about keydown events
     guard type == .keyDown else { return result }
 
@@ -158,7 +143,7 @@ private func cgEventFlagsChangedHandler(
     // Build our event input and call ghostty
     let key_ev = event.ghosttyKeyEvent(GHOSTTY_ACTION_PRESS)
     if ghostty_app_key(ghostty, key_ev) {
-        GlobalEventTap.logger.info("global key event handled event=\(event, privacy: .public)")
+        GlobalEventTap.logger.info("global key event handled event=\(event)")
         return nil
     }
 

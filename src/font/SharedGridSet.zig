@@ -28,7 +28,6 @@ const SharedGrid = font.SharedGrid;
 const discovery = @import("discovery.zig");
 const configpkg = @import("../config.zig");
 const Config = configpkg.Config;
-const global = @import("../global.zig");
 
 const log = std.log.scoped(.font_shared_grid_set);
 
@@ -45,7 +44,7 @@ font_lib: Library,
 font_discover: ?Discover = null,
 
 /// Lock to protect multi-threaded access to the map.
-lock: std.Io.Mutex = .init,
+lock: std.Thread.Mutex = .{},
 
 pub const InitError = Library.InitError;
 
@@ -80,8 +79,8 @@ pub fn deinit(self: *SharedGridSet) void {
 
 /// Returns the number of cached grids.
 pub fn count(self: *SharedGridSet) usize {
-    self.lock.lockUncancelable(global.io());
-    defer self.lock.unlock(global.io());
+    self.lock.lock();
+    defer self.lock.unlock();
     return self.map.count();
 }
 
@@ -101,8 +100,8 @@ pub fn ref(
     var key = try Key.init(self.alloc, config, font_size);
     errdefer key.deinit();
 
-    self.lock.lockUncancelable(global.io());
-    defer self.lock.unlock(global.io());
+    self.lock.lock();
+    defer self.lock.unlock();
 
     const gop = try self.map.getOrPut(self.alloc, key);
     if (gop.found_existing) {
@@ -340,24 +339,6 @@ fn collection(
     // specifying a font-family for emoji.
     if (comptime builtin.target.os.tag.isDarwin() and Discover != void) apple_emoji: {
         const disco = try self.discover() orelse break :apple_emoji;
-
-        // Fast path: we know the exact name of the font we want so we
-        // can look it up directly, which is sometimes significantly faster than
-        // full discovery (e.g. CoreText).
-        if (@hasDecl(Discover, "discoverExactFamily")) {
-            if (try disco.discoverExactFamily(
-                "Apple Color Emoji",
-            )) |face| {
-                _ = try c.addDeferred(self.alloc, face, .{
-                    .style = .regular,
-                    .fallback = true,
-                    // No size adjustment for emojis.
-                    .size_adjustment = .none,
-                });
-                break :apple_emoji;
-            }
-        }
-
         var disco_it = try disco.discover(self.alloc, .{
             .family = "Apple Color Emoji",
         });
@@ -411,8 +392,8 @@ fn collection(
 /// Decrement the ref count for the given key. If the ref count is zero,
 /// the grid will be deinitialized and removed from the map.j:w
 pub fn deref(self: *SharedGridSet, key: Key) void {
-    self.lock.lockUncancelable(global.io());
-    defer self.lock.unlock(global.io());
+    self.lock.lock();
+    defer self.lock.unlock();
 
     const entry = self.map.getEntry(key) orelse return;
     assert(entry.value_ptr.ref >= 1);
@@ -461,7 +442,7 @@ fn discover(self: *SharedGridSet) !?*Discover {
     // If we initialized, use it
     if (self.font_discover) |*v| return v;
 
-    self.font_discover = .init(self.font_lib);
+    self.font_discover = .init();
     return &self.font_discover.?;
 }
 

@@ -32,7 +32,7 @@ data: []u8,
 size: u32 = 0,
 
 /// The nodes (rectangles) of available space.
-nodes: std.ArrayList(Node) = .empty,
+nodes: std.ArrayListUnmanaged(Node) = .{},
 
 /// The format of the texture data being written into the Atlas. This must be
 /// uniform for all textures in the Atlas. If you have some textures with
@@ -104,7 +104,7 @@ pub fn init(alloc: Allocator, size: u32, format: Format) Allocator.Error!Atlas {
     var result = Atlas{
         .data = try alloc.alloc(u8, size * size * format.depth()),
         .size = size,
-        .nodes = .empty,
+        .nodes = .{},
         .format = format,
     };
     errdefer result.deinit(alloc);

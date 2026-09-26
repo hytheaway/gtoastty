@@ -560,8 +560,6 @@ pub const Modifier = union(enum) {
     }
 
     test "formatConfig percent" {
-        if (comptime @import("terminal_options").artifact == .lib) return;
-
         const configpkg = @import("../config.zig");
         const testing = std.testing;
         var buf: std.Io.Writer.Allocating = .init(testing.allocator);
@@ -573,8 +571,6 @@ pub const Modifier = union(enum) {
     }
 
     test "formatConfig absolute" {
-        if (comptime @import("terminal_options").artifact == .lib) return;
-
         const configpkg = @import("../config.zig");
         const testing = std.testing;
         var buf: std.Io.Writer.Allocating = .init(testing.allocator);
@@ -589,21 +585,23 @@ pub const Modifier = union(enum) {
 /// Key is an enum of all the available metrics keys.
 pub const Key = key: {
     const field_infos = std.meta.fields(Metrics);
-    var names: [field_infos.len][]const u8 = undefined;
-    var raw_values: [field_infos.len]comptime_int = undefined;
+    var enumFields: [field_infos.len]std.builtin.Type.EnumField = undefined;
     var count: usize = 0;
-    for (field_infos, &names, &raw_values, 0..) |field, *name, *raw, i| {
+    for (field_infos, 0..) |field, i| {
         if (field.type != u32 and field.type != i32 and field.type != f64) continue;
-        name.* = field.name;
-        raw.* = i;
+        enumFields[i] = .{ .name = field.name, .value = i };
         count += 1;
     }
 
-    const TagInt = std.math.IntFittingRange(0, count - 1);
-    var values: [count]TagInt = undefined;
-    for (raw_values, &values) |raw, *v| v.* = raw;
-
-    break :key @Enum(TagInt, .exhaustive, names[0..count], &values);
+    var decls = [_]std.builtin.Type.Declaration{};
+    break :key @Type(.{
+        .@"enum" = .{
+            .tag_type = std.math.IntFittingRange(0, count - 1),
+            .fields = enumFields[0..count],
+            .decls = &decls,
+            .is_exhaustive = true,
+        },
+    });
 };
 
 // NOTE: This is purposely not pub because we want to force outside callers

@@ -6,7 +6,6 @@ const SpecialColor = @import("../../color.zig").Special;
 const RGB = @import("../../color.zig").RGB;
 const Parser = @import("../../osc.zig").Parser;
 const Command = @import("../../osc.zig").Command;
-const SegmentedList = @import("../../../datastruct/segmented_list.zig").SegmentedList;
 
 const log = std.log.scoped(.osc_color);
 
@@ -51,8 +50,8 @@ pub fn parse(parser: *Parser, terminator_ch: ?u8) ?*Command {
     // If we've collected any extra data parse that, otherwise use an empty
     // string.
     const data = data: {
-        const cap = if (parser.capture) |*c| c else break :data "";
-        break :data cap.trailing();
+        const writer = parser.writer orelse break :data "";
+        break :data writer.buffered();
     };
     // Check and make sure that we're parsing the correct OSCs
     const op: Operation = switch (parser.state) {
@@ -183,19 +182,19 @@ fn parseGetSetAnsiColor(
         // Parse the color.
         const target: Target = switch (op) {
             // OSC5 maps directly to the Special enum.
-            .osc_5 => .{ .special = std.enums.fromInt(
+            .osc_5 => .{ .special = std.meta.intToEnum(
                 SpecialColor,
                 std.math.cast(u3, color) orelse return result,
-            ) orelse return result },
+            ) catch return result },
 
             // OSC4 maps 0-255 to palette, 256-259 to special offset
             // by the palette count.
             .osc_4 => if (std.math.cast(u8, color)) |idx| .{
                 .palette = idx,
-            } else .{ .special = std.enums.fromInt(
+            } else .{ .special = std.meta.intToEnum(
                 SpecialColor,
                 std.math.cast(u3, color - 256) orelse return result,
-            ) orelse return result },
+            ) catch return result },
 
             else => comptime unreachable,
         };
@@ -256,19 +255,19 @@ fn parseResetAnsiColor(
         // Parse the color.
         const target: Target = switch (op) {
             // OSC105 maps directly to the Special enum.
-            .osc_105 => .{ .special = std.enums.fromInt(
+            .osc_105 => .{ .special = std.meta.intToEnum(
                 SpecialColor,
                 std.math.cast(u3, color) orelse continue,
-            ) orelse continue },
+            ) catch continue },
 
             // OSC104 maps 0-255 to palette, 256-259 to special offset
             // by the palette count.
             .osc_104 => if (std.math.cast(u8, color)) |idx| .{
                 .palette = idx,
-            } else .{ .special = std.enums.fromInt(
+            } else .{ .special = std.meta.intToEnum(
                 SpecialColor,
                 std.math.cast(u3, color - 256) orelse continue,
-            ) orelse continue },
+            ) catch continue },
 
             else => comptime unreachable,
         };
@@ -330,7 +329,7 @@ fn parseResetDynamicColor(
 /// The exact prealloc value is chosen arbitrarily assuming most
 /// color ops have very few. If we can get empirical data on more
 /// typical values we can switch to that.
-pub const List = SegmentedList(
+pub const List = std.SegmentedList(
     Request,
     2,
 );
@@ -451,7 +450,7 @@ test "OSC 4:" {
 
     // Test every special color
     for (0..@typeInfo(SpecialColor).@"enum".fields.len) |i| {
-        const special = std.enums.fromInt(SpecialColor, i) orelse return error.InvalidEnumValue;
+        const special = try std.meta.intToEnum(SpecialColor, i);
 
         // Simple color set
         // printf '\e]4;256;red\\'
@@ -483,7 +482,7 @@ test "OSC 5:" {
 
     // Test every special color
     for (0..@typeInfo(SpecialColor).@"enum".fields.len) |i| {
-        const special = std.enums.fromInt(SpecialColor, i) orelse return error.InvalidEnumValue;
+        const special = try std.meta.intToEnum(SpecialColor, i);
 
         // Simple color set
         // printf '\e]4;256;red\\'
@@ -593,7 +592,7 @@ test "OSC 104:" {
 
     // Test every special color
     for (0..@typeInfo(SpecialColor).@"enum".fields.len) |i| {
-        const special = std.enums.fromInt(SpecialColor, i) orelse return error.InvalidEnumValue;
+        const special = try std.meta.intToEnum(SpecialColor, i);
 
         // Simple color set
         // printf '\e]104;256\\'

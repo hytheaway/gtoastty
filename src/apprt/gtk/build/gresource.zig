@@ -5,8 +5,11 @@
 //! Litmus test: `src/apprt/gtk` should exist relative to the pwd.
 
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 
-const build_info = @import("info.zig");
+/// Prefix/appid for the gresource file.
+pub const prefix = "/com/mitchellh/ghostty";
+pub const app_id = "com.mitchellh.ghostty";
 
 /// The path to the Blueprint files. The folder structure is expected to be
 /// `{version}/{name}.blp` where `version` is the major and minor
@@ -109,7 +112,7 @@ pub fn blueprint(comptime bp: Blueprint) [:0]const u8 {
                 std.mem.eql(u8, candidate.name, bp.name))
             {
                 return std.fmt.comptimePrint("{s}/ui/{d}.{d}/{s}.ui", .{
-                    build_info.resource_path,
+                    prefix,
                     candidate.major,
                     candidate.minor,
                     candidate.name,
@@ -121,9 +124,29 @@ pub fn blueprint(comptime bp: Blueprint) [:0]const u8 {
     }
 }
 
-pub fn main(init: std.process.Init) !void {
+pub fn main() !void {
+    var debug_allocator: std.heap.DebugAllocator(.{}) = .init;
+    defer _ = debug_allocator.deinit();
+    const alloc = debug_allocator.allocator();
+
+    // Collect the UI files that are passed in as arguments.
+    var ui_files: std.ArrayListUnmanaged([]const u8) = .empty;
+    defer {
+        for (ui_files.items) |item| alloc.free(item);
+        ui_files.deinit(alloc);
+    }
+    var it = try std.process.argsWithAllocator(alloc);
+    defer it.deinit();
+    while (it.next()) |arg| {
+        if (!std.mem.endsWith(u8, arg, ".ui")) continue;
+        try ui_files.append(
+            alloc,
+            try alloc.dupe(u8, arg),
+        );
+    }
+
     var buf: [4096]u8 = undefined;
-    var stdout = std.Io.File.stdout().writer(init.io, &buf);
+    var stdout = std.fs.File.stdout().writer(&buf);
     const writer = &stdout.interface;
     try writer.writeAll(
         \\<?xml version="1.0" encoding="UTF-8"?>
@@ -131,9 +154,9 @@ pub fn main(init: std.process.Init) !void {
         \\
     );
 
-    try genRoot(init.io, writer);
-    try genIcons(init.io, writer);
-    try genUi(init.io, writer);
+    try genRoot(writer);
+    try genIcons(writer);
+    try genUi(alloc, writer, &ui_files);
 
     try writer.writeAll(
         \\</gresources>
@@ -146,24 +169,24 @@ pub fn main(init: std.process.Init) !void {
 /// Generate the icon resources. This works by looking up all the icons
 /// specified by `icon_sizes` in `images/icons/`. They are asserted to exist
 /// by trying to access the file.
-fn genIcons(io: std.Io, writer: *std.Io.Writer) !void {
+fn genIcons(writer: *std.Io.Writer) !void {
     try writer.print(
         \\  <gresource prefix="{s}/icons">
         \\
-    , .{build_info.resource_path});
+    , .{prefix});
 
-    const cwd: std.Io.Dir = .cwd();
+    const cwd = std.fs.cwd();
     inline for (icon_sizes) |size| {
         // 1x
         {
             const alias = std.fmt.comptimePrint("{d}x{d}", .{ size, size });
             const source = std.fmt.comptimePrint("images/gnome/{d}.png", .{size});
-            try cwd.access(io, source, .{});
+            try cwd.access(source, .{});
             try writer.print(
                 \\    <file alias="{s}/apps/{s}.png">{s}</file>
                 \\
             ,
-                .{ alias, build_info.base_application_id, source },
+                .{ alias, app_id, source },
             );
         }
 
@@ -171,12 +194,12 @@ fn genIcons(io: std.Io, writer: *std.Io.Writer) !void {
         {
             const alias = std.fmt.comptimePrint("{d}x{d}@2", .{ size, size });
             const source = std.fmt.comptimePrint("images/gnome/{d}.png", .{size * 2});
-            try cwd.access(io, source, .{});
+            try cwd.access(source, .{});
             try writer.print(
                 \\    <file alias="{s}/apps/{s}.png">{s}</file>
                 \\
             ,
-                .{ alias, build_info.base_application_id, source },
+                .{ alias, app_id, source },
             );
         }
     }
@@ -188,19 +211,19 @@ fn genIcons(io: std.Io, writer: *std.Io.Writer) !void {
 }
 
 /// Generate the resources at the root prefix.
-fn genRoot(io: std.Io, writer: *std.Io.Writer) !void {
+fn genRoot(writer: *std.Io.Writer) !void {
     try writer.print(
         \\  <gresource prefix="{s}">
         \\
-    , .{build_info.resource_path});
+    , .{prefix});
 
-    const cwd: std.Io.Dir = .cwd();
+    const cwd = std.fs.cwd();
     inline for (css) |name| {
         const source = std.fmt.comptimePrint(
             "{s}/{s}",
             .{ css_path, name },
         );
-        try cwd.access(io, source, .{});
+        try cwd.access(source, .{});
         try writer.print(
             \\    <file compressed="true" alias="{s}">{s}</file>
             \\
@@ -215,44 +238,38 @@ fn genRoot(io: std.Io, writer: *std.Io.Writer) !void {
     );
 }
 
-/// Generate all the UI resources.
-///
-/// Each file is written as a *relative* path, `{major}.{minor}/{name}.ui`,
-/// which `glib-compile-resources` resolves against a `--sourcedir`. An
-/// absolute path into the Zig cache would change whenever the step that
-/// produced the `.ui` did, and this XML with it.
-///
-/// The compiled `.ui` files are not inputs here for the same reason. We
-/// check that the blueprint *sources* exist instead, as `genRoot` and
-/// `genIcons` do for the CSS and icons.
-fn genUi(io: std.Io, writer: *std.Io.Writer) !void {
-    // Two `comptimePrint` calls per blueprint exceed the default quota.
-    @setEvalBranchQuota(100_000);
-
+/// Generate all the UI resources. This works by looking up all the
+/// blueprint files in `${ui_path}/{major}.{minor}/{name}.blp` and
+/// assuming these will be
+fn genUi(
+    alloc: Allocator,
+    writer: *std.Io.Writer,
+    files: *const std.ArrayListUnmanaged([]const u8),
+) !void {
     try writer.print(
         \\  <gresource prefix="{s}/ui">
         \\
-    , .{build_info.resource_path});
+    , .{prefix});
 
-    const cwd: std.Io.Dir = .cwd();
-    inline for (blueprints) |bp| {
-        const source = std.fmt.comptimePrint("{s}/{d}.{d}/{s}.blp", .{
-            ui_path,
-            bp.major,
-            bp.minor,
-            bp.name,
-        });
-        try cwd.access(io, source, .{});
-
-        const alias = std.fmt.comptimePrint("{d}.{d}/{s}.ui", .{
-            bp.major,
-            bp.minor,
-            bp.name,
-        });
-        try writer.print(
-            \\    <file compressed="true" preprocess="xml-stripblanks" alias="{s}">{s}</file>
-            \\
-        , .{ alias, alias });
+    for (files.items) |ui_file| {
+        for (blueprints) |bp| {
+            const expected = try std.fmt.allocPrint(
+                alloc,
+                "/{d}.{d}/{s}.ui",
+                .{ bp.major, bp.minor, bp.name },
+            );
+            defer alloc.free(expected);
+            if (!std.mem.endsWith(u8, ui_file, expected)) continue;
+            try writer.print(
+                "    <file compressed=\"true\" preprocess=\"xml-stripblanks\" alias=\"{d}.{d}/{s}.ui\">{s}</file>\n",
+                .{ bp.major, bp.minor, bp.name, ui_file },
+            );
+            break;
+        } else {
+            // The for loop never broke which means it didn't find
+            // a matching blueprint for this input.
+            return error.BlueprintNotFound;
+        }
     }
 
     try writer.writeAll(

@@ -8,6 +8,8 @@
 import XCTest
 
 final class GhosttyWindowPositionUITests: GhosttyCustomConfigCase {
+    override static var runsForEachTargetApplicationUIConfiguration: Bool { false }
+
     // MARK: - Cascading
 
     @MainActor func testWindowCascading() async throws {

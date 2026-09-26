@@ -51,22 +51,7 @@ extension NSWindow {
         var error: NSError?
         let success = GhosttyAddTabbedWindowSafely(self, child, ordered.rawValue, &error)
         if let error {
-            Ghostty.logger.error("addTabbedWindow failed: \(error.localizedDescription, privacy: .public)")
-        }
-
-        return success
-    }
-}
-
-extension NSWindowController {
-    /// Wraps `showWindow` with an Objective-C exception catcher because selecting
-    /// a tab can raise an AppKit fullscreen window-stack exception.
-    @discardableResult
-    func showWindowSafely(_ sender: Any?) -> Bool {
-        var error: NSError?
-        let success = GhosttyShowWindowSafely(self, sender, &error)
-        if let error {
-            Ghostty.logger.error("showWindow failed: \(error.localizedDescription, privacy: .public)")
+            Ghostty.logger.error("addTabbedWindow failed: \(error.localizedDescription)")
         }
 
         return success

@@ -93,7 +93,7 @@ pub const Envelope = struct {
         alloc: Allocator,
         reader: *std.Io.Reader,
     ) !std.ArrayList(Item) {
-        var items: std.ArrayList(Item) = .empty;
+        var items: std.ArrayList(Item) = .{};
         errdefer items.deinit(alloc);
         while (try parseOneItem(alloc, reader)) |item| {
             try items.append(alloc, item);
@@ -391,7 +391,7 @@ pub const Attachment = struct {
                 else => return error.InvalidFieldType,
             } else null,
 
-            .headers_extra = item.headers,
+            .headers_extra = item.headers.unmanaged,
             .payload = item.payload,
         };
     }
@@ -417,7 +417,7 @@ pub const Attachment = struct {
         }
 
         return .{
-            .headers = self.headers_extra,
+            .headers = self.headers_extra.promote(alloc),
             .type = .attachment,
             .payload = self.payload,
         };

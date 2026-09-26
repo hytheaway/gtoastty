@@ -10,7 +10,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <ghostty/vt/types.h>
+#include <ghostty/vt/result.h>
 #include <ghostty/vt/allocator.h>
 
 /**
@@ -21,21 +21,20 @@
  *
  * @ingroup key
  */
-typedef struct GhosttyKeyEventImpl *GhosttyKeyEvent;
+typedef struct GhosttyKeyEvent *GhosttyKeyEvent;
 
 /**
  * Keyboard input event types.
  *
  * @ingroup key
  */
-typedef enum GHOSTTY_ENUM_TYPED {
+typedef enum {
     /** Key was released */
     GHOSTTY_KEY_ACTION_RELEASE = 0,
     /** Key was pressed */
     GHOSTTY_KEY_ACTION_PRESS = 1,
     /** Key is being repeated (held down) */
     GHOSTTY_KEY_ACTION_REPEAT = 2,
-    GHOSTTY_KEY_ACTION_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyKeyAction;
 
 /**
@@ -104,7 +103,7 @@ typedef uint16_t GhosttyMods;
  *
  * @ingroup key
  */
-typedef enum GHOSTTY_ENUM_TYPED {
+typedef enum {
     GHOSTTY_KEY_UNIDENTIFIED = 0,
 
     // Writing System Keys (W3C § 3.1.1)
@@ -297,7 +296,6 @@ typedef enum GHOSTTY_ENUM_TYPED {
     GHOSTTY_KEY_COPY,
     GHOSTTY_KEY_CUT,
     GHOSTTY_KEY_PASTE,
-    GHOSTTY_KEY_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttyKey;
 
 /**
@@ -312,7 +310,7 @@ typedef enum GHOSTTY_ENUM_TYPED {
  * 
  * @ingroup key
  */
-GHOSTTY_API GhosttyResult ghostty_key_event_new(const GhosttyAllocator *allocator, GhosttyKeyEvent *event);
+GhosttyResult ghostty_key_event_new(const GhosttyAllocator *allocator, GhosttyKeyEvent *event);
 
 /**
  * Free a key event instance.
@@ -324,7 +322,7 @@ GHOSTTY_API GhosttyResult ghostty_key_event_new(const GhosttyAllocator *allocato
  * 
  * @ingroup key
  */
-GHOSTTY_API void ghostty_key_event_free(GhosttyKeyEvent event);
+void ghostty_key_event_free(GhosttyKeyEvent event);
 
 /**
  * Set the key action (press, release, repeat).
@@ -334,7 +332,7 @@ GHOSTTY_API void ghostty_key_event_free(GhosttyKeyEvent event);
  *
  * @ingroup key
  */
-GHOSTTY_API void ghostty_key_event_set_action(GhosttyKeyEvent event, GhosttyKeyAction action);
+void ghostty_key_event_set_action(GhosttyKeyEvent event, GhosttyKeyAction action);
 
 /**
  * Get the key action (press, release, repeat).
@@ -344,7 +342,7 @@ GHOSTTY_API void ghostty_key_event_set_action(GhosttyKeyEvent event, GhosttyKeyA
  *
  * @ingroup key
  */
-GHOSTTY_API GhosttyKeyAction ghostty_key_event_get_action(GhosttyKeyEvent event);
+GhosttyKeyAction ghostty_key_event_get_action(GhosttyKeyEvent event);
 
 /**
  * Set the physical key code.
@@ -354,7 +352,7 @@ GHOSTTY_API GhosttyKeyAction ghostty_key_event_get_action(GhosttyKeyEvent event)
  *
  * @ingroup key
  */
-GHOSTTY_API void ghostty_key_event_set_key(GhosttyKeyEvent event, GhosttyKey key);
+void ghostty_key_event_set_key(GhosttyKeyEvent event, GhosttyKey key);
 
 /**
  * Get the physical key code.
@@ -364,7 +362,7 @@ GHOSTTY_API void ghostty_key_event_set_key(GhosttyKeyEvent event, GhosttyKey key
  *
  * @ingroup key
  */
-GHOSTTY_API GhosttyKey ghostty_key_event_get_key(GhosttyKeyEvent event);
+GhosttyKey ghostty_key_event_get_key(GhosttyKeyEvent event);
 
 /**
  * Set the modifier keys bitmask.
@@ -374,7 +372,7 @@ GHOSTTY_API GhosttyKey ghostty_key_event_get_key(GhosttyKeyEvent event);
  *
  * @ingroup key
  */
-GHOSTTY_API void ghostty_key_event_set_mods(GhosttyKeyEvent event, GhosttyMods mods);
+void ghostty_key_event_set_mods(GhosttyKeyEvent event, GhosttyMods mods);
 
 /**
  * Get the modifier keys bitmask.
@@ -384,7 +382,7 @@ GHOSTTY_API void ghostty_key_event_set_mods(GhosttyKeyEvent event, GhosttyMods m
  *
  * @ingroup key
  */
-GHOSTTY_API GhosttyMods ghostty_key_event_get_mods(GhosttyKeyEvent event);
+GhosttyMods ghostty_key_event_get_mods(GhosttyKeyEvent event);
 
 /**
  * Set the consumed modifiers bitmask.
@@ -394,7 +392,7 @@ GHOSTTY_API GhosttyMods ghostty_key_event_get_mods(GhosttyKeyEvent event);
  *
  * @ingroup key
  */
-GHOSTTY_API void ghostty_key_event_set_consumed_mods(GhosttyKeyEvent event, GhosttyMods consumed_mods);
+void ghostty_key_event_set_consumed_mods(GhosttyKeyEvent event, GhosttyMods consumed_mods);
 
 /**
  * Get the consumed modifiers bitmask.
@@ -404,7 +402,7 @@ GHOSTTY_API void ghostty_key_event_set_consumed_mods(GhosttyKeyEvent event, Ghos
  *
  * @ingroup key
  */
-GHOSTTY_API GhosttyMods ghostty_key_event_get_consumed_mods(GhosttyKeyEvent event);
+GhosttyMods ghostty_key_event_get_consumed_mods(GhosttyKeyEvent event);
 
 /**
  * Set whether the key event is part of a composition sequence.
@@ -414,7 +412,7 @@ GHOSTTY_API GhosttyMods ghostty_key_event_get_consumed_mods(GhosttyKeyEvent even
  *
  * @ingroup key
  */
-GHOSTTY_API void ghostty_key_event_set_composing(GhosttyKeyEvent event, bool composing);
+void ghostty_key_event_set_composing(GhosttyKeyEvent event, bool composing);
 
 /**
  * Get whether the key event is part of a composition sequence.
@@ -424,16 +422,10 @@ GHOSTTY_API void ghostty_key_event_set_composing(GhosttyKeyEvent event, bool com
  *
  * @ingroup key
  */
-GHOSTTY_API bool ghostty_key_event_get_composing(GhosttyKeyEvent event);
+bool ghostty_key_event_get_composing(GhosttyKeyEvent event);
 
 /**
- * Set the UTF-8 text generated by the key for the current keyboard layout.
- *
- * Must contain the unmodified character before any Ctrl/Meta transformations.
- * The encoder derives modifier sequences from the logical key and mods
- * bitmask, not from this text. Do not pass C0 control characters
- * (U+0000-U+001F, U+007F) or platform function key codes (e.g. macOS PUA
- * U+F700-U+F8FF); pass NULL instead and let the encoder use the logical key.
+ * Set the UTF-8 text generated by the key event.
  *
  * The key event does NOT take ownership of the text pointer. The caller
  * must ensure the string remains valid for the lifetime needed by the event.
@@ -444,7 +436,7 @@ GHOSTTY_API bool ghostty_key_event_get_composing(GhosttyKeyEvent event);
  *
  * @ingroup key
  */
-GHOSTTY_API void ghostty_key_event_set_utf8(GhosttyKeyEvent event, const char *utf8, size_t len);
+void ghostty_key_event_set_utf8(GhosttyKeyEvent event, const char *utf8, size_t len);
 
 /**
  * Get the UTF-8 text generated by the key event.
@@ -457,7 +449,7 @@ GHOSTTY_API void ghostty_key_event_set_utf8(GhosttyKeyEvent event, const char *u
  *
  * @ingroup key
  */
-GHOSTTY_API const char *ghostty_key_event_get_utf8(GhosttyKeyEvent event, size_t *len);
+const char *ghostty_key_event_get_utf8(GhosttyKeyEvent event, size_t *len);
 
 /**
  * Set the unshifted Unicode codepoint.
@@ -467,7 +459,7 @@ GHOSTTY_API const char *ghostty_key_event_get_utf8(GhosttyKeyEvent event, size_t
  *
  * @ingroup key
  */
-GHOSTTY_API void ghostty_key_event_set_unshifted_codepoint(GhosttyKeyEvent event, uint32_t codepoint);
+void ghostty_key_event_set_unshifted_codepoint(GhosttyKeyEvent event, uint32_t codepoint);
 
 /**
  * Get the unshifted Unicode codepoint.
@@ -477,6 +469,6 @@ GHOSTTY_API void ghostty_key_event_set_unshifted_codepoint(GhosttyKeyEvent event
  *
  * @ingroup key
  */
-GHOSTTY_API uint32_t ghostty_key_event_get_unshifted_codepoint(GhosttyKeyEvent event);
+uint32_t ghostty_key_event_get_unshifted_codepoint(GhosttyKeyEvent event);
 
 #endif /* GHOSTTY_VT_KEY_EVENT_H */

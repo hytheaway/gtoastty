@@ -16,36 +16,21 @@ extension Ghostty {
     /// (F1, F2, ...) with a KeyboardShortcut. This doesn't represent a practical issue because input
     /// handling for Ghostty is handled at a lower level (usually). This function should generally only
     /// be used for things like NSMenu that only support keyboard shortcuts anyways.
-    @MainActor static func keyboardShortcut(for trigger: ghostty_input_trigger_s) -> KeyboardShortcut? {
-        let modifierFlags = Self.eventModifierFlags(mods: trigger.mods)
+    static func keyboardShortcut(for trigger: ghostty_input_trigger_s) -> KeyboardShortcut? {
         let key: KeyEquivalent
         switch trigger.tag {
         case GHOSTTY_TRIGGER_PHYSICAL:
-            let physical = trigger.key.physical
-            if let equivalent = Self.keyToEquivalent[physical] {
-                key = equivalent
+            // Only functional keys can be converted to a KeyboardShortcut. Other physical
+            // mappings cannot because KeyboardShortcut in Swift is inherently layout-dependent.
+            if let equiv = Self.keyToEquivalent[trigger.key.physical] {
+                key = equiv
             } else {
-                guard
-                    Self.writingSystemKeyRange.contains(physical.rawValue),
-                    let inputKey = Input.Key(cKey: physical),
-                    let keyCode = inputKey.keyCode,
-                    // Command can select a distinct layout table. Other modifiers remain
-                    // separate in the menu's modifier mask and must not affect this character.
-                    let character = KeyboardLayout.character(
-                        for: keyCode,
-                        modifiers: modifierFlags.intersection(.command))
-                else { return nil }
-
-                // Printable physical keys must be translated through the current layout.
-                key = KeyEquivalent(character)
+                return nil
             }
 
         case GHOSTTY_TRIGGER_UNICODE:
-            guard
-                let scalar = UnicodeScalar(trigger.key.unicode),
-                let normalized = Character(scalar).lowercased().first
-            else { return nil }
-            key = KeyEquivalent(normalized)
+            guard let scalar = UnicodeScalar(trigger.key.unicode) else { return nil }
+            key = KeyEquivalent(Character(scalar))
 
         case GHOSTTY_TRIGGER_CATCH_ALL:
             // catch_all matches any key, so it can't be represented as a KeyboardShortcut
@@ -57,7 +42,7 @@ extension Ghostty {
 
         return KeyboardShortcut(
             key,
-            modifiers: EventModifiers(nsFlags: modifierFlags))
+            modifiers: EventModifiers(nsFlags: Ghostty.eventModifierFlags(mods: trigger.mods)))
     }
 
     // MARK: Mods
@@ -104,7 +89,7 @@ extension Ghostty {
         GHOSTTY_KEY_ARROW_RIGHT: .rightArrow,
         GHOSTTY_KEY_HOME: .home,
         GHOSTTY_KEY_END: .end,
-        GHOSTTY_KEY_DELETE: .deleteForward,
+        GHOSTTY_KEY_DELETE: .delete,
         GHOSTTY_KEY_PAGE_UP: .pageUp,
         GHOSTTY_KEY_PAGE_DOWN: .pageDown,
         GHOSTTY_KEY_ESCAPE: .escape,
@@ -113,10 +98,6 @@ extension Ghostty {
         GHOSTTY_KEY_BACKSPACE: .delete,
         GHOSTTY_KEY_SPACE: .space,
     ]
-
-    /// The contiguous W3C "Writing System Keys" § 3.1.1 key range.
-    private static let writingSystemKeyRange =
-        GHOSTTY_KEY_BACKQUOTE.rawValue...GHOSTTY_KEY_SLASH.rawValue
 }
 
 // MARK: Ghostty.Input.BindingFlags
@@ -237,66 +218,6 @@ extension Ghostty.Input {
                 return execute(keyEvent)
             }
         }
-    }
-}
-
-extension Ghostty.Input.KeyEvent {
-    /// Create a translated key event for programmatic input (e.g. AppleScript).
-    ///
-    /// - Parameters:
-    ///   - key: The key being pressed or released.
-    ///   - action: The key action.
-    ///   - mods: The full set of modifiers for the event.
-    ///   - translationMods: The subset of `mods` that participates in text
-    ///     translation. Use `Surface.keyTranslationMods(_:)` so that
-    ///     configuration such as `macos-option-as-alt` is honored.
-    ///
-    /// - Note: Translation is a single stateless pass through the keyboard layout.
-    ///   A key that starts a dead-key sequence (e.g. option+E on a US layout)
-    ///   produces its standalone character or nothing.
-    @MainActor
-    init(
-        synthesizing key: Ghostty.Input.Key,
-        action: Ghostty.Input.Action,
-        mods: Ghostty.Input.Mods,
-        translationMods: Ghostty.Input.Mods
-    ) {
-        let keyCode = key.keyCode
-
-        // Control never contributes to the translation of text,
-        // matching `NSEvent.ghosttyCharacters`.
-        let text: String?
-        if action == .release {
-            // We don't need to attach text to a release key event,
-            // as real NSEvents don't carry them in most cases.
-            text = nil
-        } else {
-            text = keyCode
-                .flatMap {
-                    KeyboardLayout.character(
-                        for: $0,
-                        modifiers: translationMods.nsFlags.subtracting(.control))
-                }
-                .flatMap { String($0).keyEventText }
-        }
-
-        // The unshifted codepoint ignores all modifiers. Control characters are
-        // reported as no codepoint (0) so that Ghostty encodes such keys from
-        // the key enum instead.
-        let unshiftedCodepoint = keyCode
-            .flatMap { KeyboardLayout.character(for: $0, modifiers: []) }
-            .flatMap { String($0).keyEventText }?
-            .unicodeScalars.first?.value ?? 0
-
-        self.init(
-            key: key,
-            action: action,
-            text: text,
-            mods: mods,
-            // Same as `NSEvent.ghosttyKeyEvent`
-            consumedMods: translationMods.subtracting([.ctrl, .super]),
-            unshiftedCodepoint: unshiftedCodepoint
-        )
     }
 }
 
@@ -594,6 +515,7 @@ extension Ghostty.Input.Momentum: AppEnum {
     ]
 }
 
+#if canImport(AppKit)
 import AppKit
 
 extension Ghostty.Input.Momentum {
@@ -610,6 +532,7 @@ extension Ghostty.Input.Momentum {
         }
     }
 }
+#endif
 
 // MARK: Ghostty.Input.Mods
 
@@ -847,15 +770,14 @@ extension Ghostty.Input {
         case cut
         case paste
 
-        init?(cKey: ghostty_input_key_e) {
-            guard let key = Key.allCases.first(where: { $0.cKey == cKey }) else { return nil }
-            self = key
-        }
-
         /// Get a key from a keycode
         init?(keyCode: UInt16) {
-            guard let key = Key.allCases.first(where: { $0.keyCode == keyCode }) else { return nil }
-            self = key
+            if let key = Key.allCases.first(where: { $0.keyCode == keyCode }) {
+                self = key
+                return
+            }
+
+            return nil
         }
 
         var cKey: ghostty_input_key_e {

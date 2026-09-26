@@ -292,13 +292,8 @@ pub fn drawE0B5(
 
     const radius: f64 = @min(float_width, float_height / 2);
 
-    // Note on the first/final lineTo moves: this is to enforce horizontal
-    // lines on both ends. This ensures that when the path is offset and
-    // stroked, the ends are butt-capped entirely perpendicularly; curveTo
-    // lerping would produce very slight slopes otherwise.
-    var path = canvas.staticPath(6);
+    var path = canvas.staticPath(4);
     path.moveTo(0, 0);
-    path.lineTo(1, 0);
     path.curveTo(
         radius * c,
         0,
@@ -313,10 +308,9 @@ pub fn drawE0B5(
         float_height - radius + radius * c,
         radius * c,
         float_height,
-        1,
+        0,
         float_height,
     );
-    path.lineTo(0, float_height);
 
     try canvas.innerStrokePath(path.wrapped_path, .{
         .line_width = @floatFromInt(metrics.box_thickness),

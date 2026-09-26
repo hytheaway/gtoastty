@@ -7,7 +7,6 @@ const adw = @import("adw");
 const gdk = @import("gdk");
 const gobject = @import("gobject");
 const gtk = @import("gtk");
-const global = @import("../../../global.zig");
 
 const input = @import("../../../input.zig");
 const gresource = @import("../build/gresource.zig");
@@ -62,13 +61,13 @@ pub const ImguiWidget = extern struct {
         ig_context: ?*cimgui.c.ImGuiContext = null,
 
         /// Our previous instant used to calculate delta time for animations.
-        instant: ?std.Io.Timestamp = null,
+        instant: ?std.time.Instant = null,
 
         /// Tick callback ID for timed updates.
         tick_callback_id: c_uint = 0,
 
         /// Last render time for throttling to 30 FPS.
-        last_render_time: ?std.Io.Timestamp = null,
+        last_render_time: ?std.time.Instant = null,
 
         pub var offset: c_int = 0;
     };
@@ -141,11 +140,10 @@ pub const ImguiWidget = extern struct {
         const priv = self.private();
         const io: *cimgui.c.ImGuiIO = cimgui.c.ImGui_GetIO();
 
-        const now: std.Io.Timestamp = .now(global.io(), .awake);
-
         // Determine our delta time
+        const now = std.time.Instant.now() catch unreachable;
         io.DeltaTime = if (priv.instant) |prev| delta: {
-            const since_ns: f64 = @floatFromInt(prev.durationTo(now).nanoseconds);
+            const since_ns: f64 = @floatFromInt(now.since(prev));
             const ns_per_s: f64 = @floatFromInt(std.time.ns_per_s);
             const since_s: f32 = @floatCast(since_ns / ns_per_s);
             break :delta @max(0.00001, since_s);
@@ -235,19 +233,7 @@ pub const ImguiWidget = extern struct {
 
         // Realize means that our OpenGL context is ready, so we can now
         // initialize the ImgUI OpenGL backend for our context.
-        // GTK may use GLES for its shared context. ImGui's default shader
-        // version is for desktop GL, so select GLSL ES explicitly in that case.
-        const context = priv.gl_area.getContext().?;
-        const glsl_version: ?[*:0]const u8 = if (context.getUseEs() != 0)
-            "#version 300 es"
-        else
-            null;
-        if (!cimgui.ImGui_ImplOpenGL3_Init(glsl_version)) {
-            log.warn("unable to initialize Dear ImGui OpenGL backend", .{});
-            cimgui.c.ImGui_DestroyContext(priv.ig_context);
-            priv.ig_context = null;
-            return;
-        }
+        _ = cimgui.ImGui_ImplOpenGL3_Init(null);
 
         // Call the virtual method to setup the UI.
         self.setup();
@@ -312,7 +298,7 @@ pub const ImguiWidget = extern struct {
 
         // Update last render time for tick callback throttling.
         const priv = self.private();
-        priv.last_render_time = .now(global.io(), .awake);
+        priv.last_render_time = std.time.Instant.now() catch null;
 
         // Setup our frame. We render twice because some ImGui behaviors
         // take multiple renders to process. I don't know how to make this
@@ -329,6 +315,9 @@ pub const ImguiWidget = extern struct {
             cimgui.c.ImGui_Render();
         }
 
+        // OpenGL final render
+        gl.clearColor(0x28 / 0xFF, 0x2C / 0xFF, 0x34 / 0xFF, 1.0);
+        gl.clear(gl.c.GL_COLOR_BUFFER_BIT);
         cimgui.ImGui_ImplOpenGL3_RenderDrawData(cimgui.c.ImGui_GetDrawData());
 
         return @intFromBool(true);
@@ -468,10 +457,15 @@ pub const ImguiWidget = extern struct {
         const self: *Self = gobject.ext.cast(Self, widget) orelse return 0;
         const priv = self.private();
 
+        const now = std.time.Instant.now() catch {
+            self.queueRender();
+            return 1;
+        };
+
         // Throttle to 30 FPS (~33ms between frames)
         const frame_time_ns: u64 = std.time.ns_per_s / 30;
         const should_render = if (priv.last_render_time) |last|
-            last.untilNow(global.io(), .awake).nanoseconds >= frame_time_ns
+            now.since(last) >= frame_time_ns
         else
             true;
 

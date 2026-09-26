@@ -2,7 +2,7 @@ import AppKit
 import System
 
 /// The icon style for the Ghostty App.
-enum AppIcon: Equatable, Codable, Sendable {
+enum AppIcon: Equatable, Codable {
     case official
     case blueprint
     case chalkboard
@@ -84,26 +84,3 @@ enum AppIcon: Equatable, Codable, Sendable {
         }
     }
 }
-
-#if !DOCK_TILE_PLUGIN
-/// Making sure that `NSWorkspace.shared.setIcon` executes on only one thread at a time
-actor AppIconUpdater {
-    func update(icon: AppIcon?) {
-        UserDefaults.ghostty.appIcon = icon
-        // Notify DockTilePlugin to update dock icon
-        DistributedNotificationCenter.default()
-            .postNotificationName(
-                .ghosttyIconDidChange,
-                object: nil,
-                userInfo: nil,
-                deliverImmediately: true,
-            )
-
-        NSWorkspace.shared.setIcon(
-            icon?.image(in: .main),
-            forFile: Bundle.main.bundlePath,
-        )
-        NSWorkspace.shared.noteFileSystemChanged(Bundle.main.bundlePath)
-    }
-}
-#endif

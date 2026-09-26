@@ -21,20 +21,6 @@ pub const Link = struct {
     pub fn deinit(self: *Link) void {
         self.regex.deinit();
     }
-
-    /// Returns true if this link's highlight condition matches the given mouse state.
-    fn active(
-        self: *const Link,
-        mouse_viewport: ?point.Coordinate,
-        mouse_mods: inputpkg.Mods,
-    ) bool {
-        return switch (self.highlight) {
-            .always => true,
-            .always_mods => |v| mouse_mods.equal(v),
-            .hover => mouse_viewport != null,
-            .hover_mods => |v| mouse_viewport != null and mouse_mods.equal(v),
-        };
-    }
 };
 
 /// A set of links. This provides a higher level API for renderers
@@ -80,14 +66,6 @@ pub const Set = struct {
         // Fast path, not very likely since we have default links.
         if (self.links.len == 0) return;
 
-        // Determine if any links are active before building the string and
-        // byte-to-cell map. Those buffers scale with viewport size and this
-        // function runs during frame updates, so avoid allocating them when
-        // the current mouse/modifier state can't highlight any regex links.
-        for (self.links) |*link| {
-            if (link.active(mouse_viewport, mouse_mods)) break;
-        } else return;
-
         // Convert our render state to a string + byte map.
         var builder: std.Io.Writer.Allocating = .init(alloc);
         defer builder.deinit();
@@ -102,7 +80,20 @@ pub const Set = struct {
 
         // Go through each link and see if we have any matches.
         for (self.links) |*link| {
-            if (!link.active(mouse_viewport, mouse_mods)) continue;
+            // Determine if our highlight conditions are met. We use a
+            // switch here instead of an if so that we can get a compile
+            // error if any other conditions are added.
+            switch (link.highlight) {
+                .always => {},
+                .always_mods => |v| if (!mouse_mods.equal(v)) continue,
+
+                // We check the hover points later.
+                .hover => if (mouse_viewport == null) continue,
+                .hover_mods => |v| {
+                    if (mouse_viewport == null) continue;
+                    if (!mouse_mods.equal(v)) continue;
+                },
+            }
 
             var offset: usize = 0;
             while (offset < str.len) {
@@ -148,7 +139,7 @@ test "renderCellMap" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(testing.io, alloc, .{
+    var t: terminal.Terminal = try .init(alloc, .{
         .cols = 5,
         .rows = 3,
     });
@@ -157,7 +148,7 @@ test "renderCellMap" {
     var s = t.vtStream();
     defer s.deinit();
     const str = "1ABCD2EFGH\r\n3IJKL";
-    s.nextSlice(str);
+    try s.nextSlice(str);
 
     var state: terminal.RenderState = .empty;
     defer state.deinit(alloc);
@@ -201,7 +192,7 @@ test "renderCellMap hover links" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(testing.io, alloc, .{
+    var t: terminal.Terminal = try .init(alloc, .{
         .cols = 5,
         .rows = 3,
     });
@@ -210,7 +201,7 @@ test "renderCellMap hover links" {
     var s = t.vtStream();
     defer s.deinit();
     const str = "1ABCD2EFGH\r\n3IJKL";
-    s.nextSlice(str);
+    try s.nextSlice(str);
 
     var state: terminal.RenderState = .empty;
     defer state.deinit(alloc);
@@ -275,71 +266,11 @@ test "renderCellMap hover links" {
     }
 }
 
-test "renderCellMap inactive links don't allocate" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
-    const io = testing.io;
-
-    var t: terminal.Terminal = try .init(io, alloc, .{
-        .cols = 5,
-        .rows = 3,
-    });
-    defer t.deinit(alloc);
-
-    var s = t.vtStream();
-    defer s.deinit();
-    const str = "1ABCD2EFGH\r\n3IJKL";
-    s.nextSlice(str);
-
-    var state: terminal.RenderState = .empty;
-    defer state.deinit(alloc);
-    try state.update(alloc, &t);
-
-    var set = try Set.fromConfig(alloc, &.{
-        .{
-            .regex = "AB",
-            .action = .{ .open = {} },
-            .highlight = .{ .hover = {} },
-        },
-
-        .{
-            .regex = "EF",
-            .action = .{ .open = {} },
-            .highlight = .{ .always_mods = .{ .ctrl = true } },
-        },
-
-        .{
-            .regex = "IJ",
-            .action = .{ .open = {} },
-            .highlight = .{ .hover_mods = .{ .shift = true } },
-        },
-    });
-    defer set.deinit(alloc);
-
-    var failing = std.testing.FailingAllocator.init(
-        alloc,
-        .{ .fail_index = 0 },
-    );
-    const failing_alloc = failing.allocator();
-
-    var result: terminal.RenderState.CellSet = .empty;
-    defer result.deinit(failing_alloc);
-    try set.renderCellMap(
-        failing_alloc,
-        &result,
-        &state,
-        null,
-        .{},
-    );
-
-    try testing.expectEqual(@as(usize, 0), result.count());
-}
-
 test "renderCellMap mods no match" {
     const testing = std.testing;
     const alloc = testing.allocator;
 
-    var t: terminal.Terminal = try .init(testing.io, alloc, .{
+    var t: terminal.Terminal = try .init(alloc, .{
         .cols = 5,
         .rows = 3,
     });
@@ -348,7 +279,7 @@ test "renderCellMap mods no match" {
     var s = t.vtStream();
     defer s.deinit();
     const str = "1ABCD2EFGH\r\n3IJKL";
-    s.nextSlice(str);
+    try s.nextSlice(str);
 
     var state: terminal.RenderState = .empty;
     defer state.deinit(alloc);

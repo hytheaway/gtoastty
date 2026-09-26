@@ -1,5 +1,4 @@
 const std = @import("std");
-const translate_c = @import("translate_c");
 
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
@@ -18,23 +17,14 @@ pub fn build(b: *std.Build) !void {
         .root_module = b.createModule(.{
             .target = target,
             .optimize = optimize,
-            .link_libc = true,
         }),
         .linkage = .static,
     });
+    lib.linkLibC();
     if (target.result.os.tag.isDarwin()) {
         const apple_sdk = @import("apple_sdk");
         try apple_sdk.addPaths(b, lib);
     }
-
-    try translate_c.addImportToModule(b, "sentry_c", module, .{
-        .source = .{ .includes = .{
-            .files = &.{.{ .path = "sentry.h" }},
-        } },
-        .target = target,
-        .optimize = optimize,
-        .link_libs = &.{lib},
-    });
 
     var flags: std.ArrayList([]const u8) = .empty;
     defer flags.deinit(b.allocator);
@@ -55,9 +45,10 @@ pub fn build(b: *std.Build) !void {
     }
 
     if (b.lazyDependency("sentry", .{})) |upstream| {
-        lib.root_module.addIncludePath(upstream.path("include"));
-        lib.root_module.addIncludePath(upstream.path("src"));
-        lib.root_module.addCSourceFiles(.{
+        module.addIncludePath(upstream.path("include"));
+        lib.addIncludePath(upstream.path("include"));
+        lib.addIncludePath(upstream.path("src"));
+        lib.addCSourceFiles(.{
             .root = upstream.path(""),
             .files = srcs,
             .flags = flags.items,
@@ -65,7 +56,7 @@ pub fn build(b: *std.Build) !void {
 
         // Linux-only
         if (target.result.os.tag == .linux) {
-            lib.root_module.addCSourceFiles(.{
+            lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "vendor/stb_sprintf.c",
@@ -76,7 +67,7 @@ pub fn build(b: *std.Build) !void {
 
         // Symbolizer + Unwinder
         if (target.result.os.tag == .windows) {
-            lib.root_module.addCSourceFiles(.{
+            lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/sentry_windows_dbghelp.c",
@@ -87,7 +78,7 @@ pub fn build(b: *std.Build) !void {
                 .flags = flags.items,
             });
         } else {
-            lib.root_module.addCSourceFiles(.{
+            lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/sentry_unix_pageallocator.c",
@@ -101,7 +92,7 @@ pub fn build(b: *std.Build) !void {
 
         // Module finder
         switch (target.result.os.tag) {
-            .windows => lib.root_module.addCSourceFiles(.{
+            .windows => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/modulefinder/sentry_modulefinder_windows.c",
@@ -109,7 +100,7 @@ pub fn build(b: *std.Build) !void {
                 .flags = flags.items,
             }),
 
-            .macos, .ios => lib.root_module.addCSourceFiles(.{
+            .macos, .ios => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/modulefinder/sentry_modulefinder_apple.c",
@@ -117,7 +108,7 @@ pub fn build(b: *std.Build) !void {
                 .flags = flags.items,
             }),
 
-            .linux => lib.root_module.addCSourceFiles(.{
+            .linux => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/modulefinder/sentry_modulefinder_linux.c",
@@ -135,7 +126,7 @@ pub fn build(b: *std.Build) !void {
 
         // Transport
         switch (transport) {
-            .curl => lib.root_module.addCSourceFiles(.{
+            .curl => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/transports/sentry_transport_curl.c",
@@ -143,7 +134,7 @@ pub fn build(b: *std.Build) !void {
                 .flags = flags.items,
             }),
 
-            .winhttp => lib.root_module.addCSourceFiles(.{
+            .winhttp => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/transports/sentry_transport_winhttp.c",
@@ -151,7 +142,7 @@ pub fn build(b: *std.Build) !void {
                 .flags = flags.items,
             }),
 
-            .none => lib.root_module.addCSourceFiles(.{
+            .none => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/transports/sentry_transport_none.c",
@@ -162,7 +153,7 @@ pub fn build(b: *std.Build) !void {
 
         // Backend
         switch (backend) {
-            .crashpad => lib.root_module.addCSourceFiles(.{
+            .crashpad => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/backends/sentry_backend_crashpad.cpp",
@@ -171,7 +162,7 @@ pub fn build(b: *std.Build) !void {
             }),
 
             .breakpad => {
-                lib.root_module.addCSourceFiles(.{
+                lib.addCSourceFiles(.{
                     .root = upstream.path(""),
                     .files = &.{
                         "src/backends/sentry_backend_breakpad.cpp",
@@ -183,15 +174,15 @@ pub fn build(b: *std.Build) !void {
                     .target = target,
                     .optimize = optimize,
                 })) |breakpad_dep| {
-                    lib.root_module.linkLibrary(breakpad_dep.artifact("breakpad"));
+                    lib.linkLibrary(breakpad_dep.artifact("breakpad"));
 
                     // We need to add this because Sentry includes some breakpad
                     // headers that include this vendored file...
-                    lib.root_module.addIncludePath(breakpad_dep.path("vendor"));
+                    lib.addIncludePath(breakpad_dep.path("vendor"));
                 }
             },
 
-            .inproc => lib.root_module.addCSourceFiles(.{
+            .inproc => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/backends/sentry_backend_inproc.c",
@@ -199,7 +190,7 @@ pub fn build(b: *std.Build) !void {
                 .flags = flags.items,
             }),
 
-            .none => lib.root_module.addCSourceFiles(.{
+            .none => lib.addCSourceFiles(.{
                 .root = upstream.path(""),
                 .files = &.{
                     "src/backends/sentry_backend_none.c",

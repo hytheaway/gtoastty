@@ -66,15 +66,15 @@ extension Ghostty.SurfaceConfiguration: ScriptRecord {
             }
         }
 
-        if let rawWaitAfterCommand = raw["waitAfterCommand"] {
-            if let boolValue = rawWaitAfterCommand as? Bool {
-                waitAfterCommand = boolValue
-            } else if let numericValue = rawWaitAfterCommand as? NSNumber {
-                waitAfterCommand = numericValue.boolValue
-            } else {
-                throw RecordParseError.invalidType(parameter: "wait after command", expected: "boolean")
-            }
-        }
+        // if let rawWaitAfterCommand = raw["waitAfterCommand"] {
+        //     if let boolValue = rawWaitAfterCommand as? Bool {
+        //         waitAfterCommand = boolValue
+        //     } else if let numericValue = rawWaitAfterCommand as? NSNumber {
+        //         waitAfterCommand = numericValue.boolValue
+        //     } else {
+        //         throw RecordParseError.invalidType(parameter: "wait after command", expected: "boolean")
+        //     }
+        // }
 
         if let assignments = raw["environmentVariables"] as? [String], !assignments.isEmpty {
             environmentVariables = try Self.parseScriptEnvironmentAssignments(assignments)
@@ -87,7 +87,7 @@ extension Ghostty.SurfaceConfiguration: ScriptRecord {
             "workingDirectory": "",
             "command": "",
             "initialInput": "",
-            "waitAfterCommand": false,
+            // "waitAfterCommand": false,
             "environmentVariables": [String](),
         ]
 
@@ -107,9 +107,9 @@ extension Ghostty.SurfaceConfiguration: ScriptRecord {
             record["initialInput"] = initialInput
         }
 
-        if waitAfterCommand {
-            record["waitAfterCommand"] = true
-        }
+        // if waitAfterCommand {
+        //     record["waitAfterCommand"] = true
+        // }
 
         if !environmentVariables.isEmpty {
             record["environmentVariables"] = environmentVariables.map { "\($0.key)=\($0.value)" }

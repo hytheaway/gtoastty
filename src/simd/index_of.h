@@ -6,8 +6,7 @@
 #endif
 
 #include <hwy/highway.h>
-
-#include <stddef.h>
+#include <optional>
 
 HWY_BEFORE_NAMESPACE();
 namespace ghostty {
@@ -15,16 +14,12 @@ namespace HWY_NAMESPACE {
 
 namespace hn = hwy::HWY_NAMESPACE;
 
-// Sentinel value returned by IndexOfChunk when no match is found.
-static constexpr size_t kNotFound = static_cast<size_t>(-1);
-
 // Return the index of the first occurrence of `needle` in `input`, where
-// the input and needle are already loaded into vectors. Returns kNotFound
-// if no match is found.
+// the input and needle are already loaded into vectors.
 template <class D, typename T = hn::TFromD<D>>
-size_t IndexOfChunk(D d,
-                    hn::Vec<D> needle_vec,
-                    hn::Vec<D> input_vec) {
+std::optional<size_t> IndexOfChunk(D d,
+                                   hn::Vec<D> needle_vec,
+                                   hn::Vec<D> input_vec) {
   // Compare the input vector with the needle vector. This produces
   // a vector where each lane is 0xFF if the corresponding lane in
   // `input_vec` is equal to the corresponding lane in `needle_vec`.
@@ -35,9 +30,9 @@ size_t IndexOfChunk(D d,
 
   // If we found a match, return the index into the input.
   if (pos >= 0) {
-    return static_cast<size_t>(pos);
+    return std::optional<size_t>(static_cast<size_t>(pos));
   } else {
-    return kNotFound;
+    return std::nullopt;
   }
 }
 
@@ -61,9 +56,8 @@ size_t IndexOfImpl(D d, T needle, const T* HWY_RESTRICT input, size_t count) {
   for (; i + N <= count; i += N) {
     // Load the N elements from our input into a vector and check the chunk.
     const hn::Vec<D> input_vec = hn::LoadU(d, input + i);
-    const size_t pos = IndexOfChunk(d, needle_vec, input_vec);
-    if (pos != kNotFound) {
-      return i + pos;
+    if (auto pos = IndexOfChunk(d, needle_vec, input_vec)) {
+      return i + pos.value();
     }
   }
 

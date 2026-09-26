@@ -19,11 +19,8 @@
  * The parser processes SGR parameters from CSI sequences (e.g., `ESC[1;31m`)
  * and returns individual text attributes like bold, italic, colors, etc.
  * It supports both semicolon (`;`) and colon (`:`) separators, possibly mixed,
- * and handles SGR color attributes including 8-color, 16-color, 256-color,
- * direct RGB, underline color, and reset forms. Color values are returned
- * using the shared @ref color types; applications that need to parse Ghostty
- * config/theme color strings, generate palettes, inspect X11 color names, or
- * calculate luminance and contrast should use the @ref color APIs directly.
+ * and handles various color formats including 8-color, 16-color, 256-color,
+ * X11 named colors, and RGB in multiple formats.
  *
  * ## Basic Usage
  *
@@ -34,14 +31,49 @@
  *
  * ## Example
  *
- * @snippet c-vt-sgr/src/main.c sgr-basic
+ * @code{.c}
+ * #include <assert.h>
+ * #include <stdio.h>
+ * #include <ghostty/vt.h>
+ *
+ * int main() {
+ *   // Create parser
+ *   GhosttySgrParser parser;
+ *   GhosttyResult result = ghostty_sgr_new(NULL, &parser);
+ *   assert(result == GHOSTTY_SUCCESS);
+ *
+ *   // Parse "bold, red foreground" sequence: ESC[1;31m
+ *   uint16_t params[] = {1, 31};
+ *   result = ghostty_sgr_set_params(parser, params, NULL, 2);
+ *   assert(result == GHOSTTY_SUCCESS);
+ *
+ *   // Iterate through attributes
+ *   GhosttySgrAttribute attr;
+ *   while (ghostty_sgr_next(parser, &attr)) {
+ *     switch (attr.tag) {
+ *       case GHOSTTY_SGR_ATTR_BOLD:
+ *         printf("Bold enabled\n");
+ *         break;
+ *       case GHOSTTY_SGR_ATTR_FG_8:
+ *         printf("Foreground color: %d\n", attr.value.fg_8);
+ *         break;
+ *       default:
+ *         break;
+ *     }
+ *   }
+ *
+ *   // Cleanup
+ *   ghostty_sgr_free(parser);
+ *   return 0;
+ * }
+ * @endcode
  *
  * @{
  */
 
 #include <ghostty/vt/allocator.h>
 #include <ghostty/vt/color.h>
-#include <ghostty/vt/types.h>
+#include <ghostty/vt/result.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -51,6 +83,16 @@ extern "C" {
 #endif
 
 /**
+ * Opaque handle to an SGR parser instance.
+ *
+ * This handle represents an SGR (Select Graphic Rendition) parser that can
+ * be used to parse SGR sequences and extract individual text attributes.
+ *
+ * @ingroup sgr
+ */
+typedef struct GhosttySgrParser* GhosttySgrParser;
+
+/**
  * SGR attribute tags.
  *
  * These values identify the type of an SGR attribute in a tagged union.
@@ -58,7 +100,7 @@ extern "C" {
  *
  * @ingroup sgr
  */
-typedef enum GHOSTTY_ENUM_TYPED {
+typedef enum {
   GHOSTTY_SGR_ATTR_UNSET = 0,
   GHOSTTY_SGR_ATTR_UNKNOWN = 1,
   GHOSTTY_SGR_ATTR_BOLD = 2,
@@ -90,7 +132,6 @@ typedef enum GHOSTTY_ENUM_TYPED {
   GHOSTTY_SGR_ATTR_BRIGHT_FG_8 = 28,
   GHOSTTY_SGR_ATTR_BG_256 = 29,
   GHOSTTY_SGR_ATTR_FG_256 = 30,
-  GHOSTTY_SGR_ATTR_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySgrAttributeTag;
 
 /**
@@ -98,14 +139,13 @@ typedef enum GHOSTTY_ENUM_TYPED {
  *
  * @ingroup sgr
  */
-typedef enum GHOSTTY_ENUM_TYPED {
+typedef enum {
   GHOSTTY_SGR_UNDERLINE_NONE = 0,
   GHOSTTY_SGR_UNDERLINE_SINGLE = 1,
   GHOSTTY_SGR_UNDERLINE_DOUBLE = 2,
   GHOSTTY_SGR_UNDERLINE_CURLY = 3,
   GHOSTTY_SGR_UNDERLINE_DOTTED = 4,
   GHOSTTY_SGR_UNDERLINE_DASHED = 5,
-  GHOSTTY_SGR_UNDERLINE_MAX_VALUE = GHOSTTY_ENUM_MAX_VALUE,
 } GhosttySgrUnderline;
 
 /**
@@ -179,7 +219,7 @@ typedef struct {
  *
  * @ingroup sgr
  */
-GHOSTTY_API GhosttyResult ghostty_sgr_new(const GhosttyAllocator* allocator,
+GhosttyResult ghostty_sgr_new(const GhosttyAllocator* allocator,
                               GhosttySgrParser* parser);
 
 /**
@@ -193,7 +233,7 @@ GHOSTTY_API GhosttyResult ghostty_sgr_new(const GhosttyAllocator* allocator,
  *
  * @ingroup sgr
  */
-GHOSTTY_API void ghostty_sgr_free(GhosttySgrParser parser);
+void ghostty_sgr_free(GhosttySgrParser parser);
 
 /**
  * Reset an SGR parser instance to the beginning of the parameter list.
@@ -206,7 +246,7 @@ GHOSTTY_API void ghostty_sgr_free(GhosttySgrParser parser);
  *
  * @ingroup sgr
  */
-GHOSTTY_API void ghostty_sgr_reset(GhosttySgrParser parser);
+void ghostty_sgr_reset(GhosttySgrParser parser);
 
 /**
  * Set SGR parameters for parsing.
@@ -238,7 +278,7 @@ GHOSTTY_API void ghostty_sgr_reset(GhosttySgrParser parser);
  *
  * @ingroup sgr
  */
-GHOSTTY_API GhosttyResult ghostty_sgr_set_params(GhosttySgrParser parser,
+GhosttyResult ghostty_sgr_set_params(GhosttySgrParser parser,
                                      const uint16_t* params,
                                      const char* separators,
                                      size_t len);
@@ -256,7 +296,7 @@ GHOSTTY_API GhosttyResult ghostty_sgr_set_params(GhosttySgrParser parser,
  *
  * @ingroup sgr
  */
-GHOSTTY_API bool ghostty_sgr_next(GhosttySgrParser parser, GhosttySgrAttribute* attr);
+bool ghostty_sgr_next(GhosttySgrParser parser, GhosttySgrAttribute* attr);
 
 /**
  * Get the full parameter list from an unknown SGR attribute.
@@ -271,7 +311,7 @@ GHOSTTY_API bool ghostty_sgr_next(GhosttySgrParser parser, GhosttySgrAttribute* 
  *
  * @ingroup sgr
  */
-GHOSTTY_API size_t ghostty_sgr_unknown_full(GhosttySgrUnknown unknown,
+size_t ghostty_sgr_unknown_full(GhosttySgrUnknown unknown,
                                 const uint16_t** ptr);
 
 /**
@@ -287,7 +327,7 @@ GHOSTTY_API size_t ghostty_sgr_unknown_full(GhosttySgrUnknown unknown,
  *
  * @ingroup sgr
  */
-GHOSTTY_API size_t ghostty_sgr_unknown_partial(GhosttySgrUnknown unknown,
+size_t ghostty_sgr_unknown_partial(GhosttySgrUnknown unknown,
                                    const uint16_t** ptr);
 
 /**
@@ -302,7 +342,7 @@ GHOSTTY_API size_t ghostty_sgr_unknown_partial(GhosttySgrUnknown unknown,
  *
  * @ingroup sgr
  */
-GHOSTTY_API GhosttySgrAttributeTag ghostty_sgr_attribute_tag(GhosttySgrAttribute attr);
+GhosttySgrAttributeTag ghostty_sgr_attribute_tag(GhosttySgrAttribute attr);
 
 /**
  * Get the value from an SGR attribute.
@@ -316,8 +356,33 @@ GHOSTTY_API GhosttySgrAttributeTag ghostty_sgr_attribute_tag(GhosttySgrAttribute
  *
  * @ingroup sgr
  */
-GHOSTTY_API GhosttySgrAttributeValue* ghostty_sgr_attribute_value(
+GhosttySgrAttributeValue* ghostty_sgr_attribute_value(
     GhosttySgrAttribute* attr);
+
+#ifdef __wasm__
+/**
+ * Allocate memory for an SGR attribute (WebAssembly only).
+ *
+ * This is a convenience function for WebAssembly environments to allocate
+ * memory for an SGR attribute structure that can be passed to ghostty_sgr_next.
+ *
+ * @return Pointer to the allocated attribute structure
+ *
+ * @ingroup wasm
+ */
+GhosttySgrAttribute* ghostty_wasm_alloc_sgr_attribute(void);
+
+/**
+ * Free memory for an SGR attribute (WebAssembly only).
+ *
+ * Frees memory allocated by ghostty_wasm_alloc_sgr_attribute.
+ *
+ * @param attr Pointer to the attribute structure to free
+ *
+ * @ingroup wasm
+ */
+void ghostty_wasm_free_sgr_attribute(GhosttySgrAttribute* attr);
+#endif
 
 #ifdef __cplusplus
 }

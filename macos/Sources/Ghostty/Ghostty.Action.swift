@@ -46,7 +46,6 @@ extension Ghostty.Action {
             case unknown
             case text
             case html
-            case osc8
 
             init(_ c: ghostty_action_open_url_kind_e) {
                 switch c {
@@ -54,8 +53,6 @@ extension Ghostty.Action {
                     self = .text
                 case GHOSTTY_ACTION_OPEN_URL_KIND_HTML:
                     self = .html
-                case GHOSTTY_ACTION_OPEN_URL_KIND_OSC8:
-                    self = .osc8
                 default:
                     self = .unknown
                 }

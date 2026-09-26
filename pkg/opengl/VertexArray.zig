@@ -1,6 +1,6 @@
 const VertexArray = @This();
 
-const c = @import("opengl_c");
+const c = @import("c.zig").c;
 const glad = @import("glad.zig");
 const errors = @import("errors.zig");
 

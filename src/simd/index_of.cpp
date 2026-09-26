@@ -6,6 +6,8 @@
 
 #include <simd/index_of.h>
 
+#include <optional>
+
 HWY_BEFORE_NAMESPACE();
 namespace ghostty {
 namespace HWY_NAMESPACE {

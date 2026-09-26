@@ -39,6 +39,6 @@ struct CyclingIconView: View {
 
         iconImage
             .resizable()
-            .scaledToFit()
+            .aspectRatio(contentMode: .fit)
     }
 }

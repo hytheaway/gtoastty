@@ -13,15 +13,7 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate, Confi
     @Published var errors: [String] = [] {
         didSet {
             if errors.count == 0 {
-                // Only close the window if it was ever loaded: accessing
-                // `window` on an NSWindowController loads the nib (and our
-                // SwiftUI content view), which takes tens of milliseconds.
-                // This happens on every app launch via the initial config
-                // apply, when there are usually no errors and the window
-                // was never loaded.
-                if isWindowLoaded {
-                    self.window?.performClose(nil)
-                }
+                self.window?.performClose(nil)
             }
         }
     }
@@ -37,6 +29,5 @@ class ConfigurationErrorsController: NSWindowController, NSWindowDelegate, Confi
         window.center()
         window.level = .popUpMenu
         window.contentView = NSHostingView(rootView: ConfigurationErrorsView(model: self))
-        window.titlebarAppearsTransparent = true
     }
 }

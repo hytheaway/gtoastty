@@ -10,7 +10,6 @@ const font = @import("main.zig");
 pub const Library = switch (options.backend) {
     // Freetype requires a state library
     .freetype,
-    .freetype_windows,
     .fontconfig_freetype,
     .coretext_freetype,
     => FreetypeLibrary,
@@ -30,7 +29,7 @@ pub const FreetypeLibrary = struct {
 
     /// Mutex to be held any time the library is
     /// being used to create or destroy a face.
-    mutex: *std.Io.Mutex,
+    mutex: *std.Thread.Mutex,
 
     pub const InitError = freetype.Error || Allocator.Error;
 
@@ -38,8 +37,8 @@ pub const FreetypeLibrary = struct {
         const lib = try freetype.Library.init();
         errdefer lib.deinit();
 
-        const mutex = try alloc.create(std.Io.Mutex);
-        mutex.* = .init;
+        const mutex = try alloc.create(std.Thread.Mutex);
+        mutex.* = .{};
 
         return Library{ .lib = lib, .alloc = alloc, .mutex = mutex };
     }

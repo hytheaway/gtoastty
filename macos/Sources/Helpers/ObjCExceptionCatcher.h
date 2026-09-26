@@ -11,10 +11,3 @@ FOUNDATION_EXPORT BOOL GhosttyAddTabbedWindowSafely(
     NSInteger ordered,
     NSError * _Nullable * _Nullable error
 );
-
-/// NSWindowController.showWindow wrapper
-FOUNDATION_EXPORT BOOL GhosttyShowWindowSafely(
-    id _Nonnull controller,
-    id _Nullable sender,
-    NSError * _Nullable * _Nullable error
-);

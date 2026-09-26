@@ -460,9 +460,10 @@ def generate_zig_switch_arms(
                         # scaled and aligned position would span the line height
                         # plus overlap. Thus, we can use any other stretched
                         # glyph with overlap as stand-in to get the vertical
-                        # bounds, such as 0xE0B0 (powerline left hard divider).
-                        # We don't worry about the horizontal bounds, as they by
-                        # design should not affect the group's bounding box.
+                        # bounds, such as as 0xE0B0 (powerline left hard
+                        # divider). We don't worry about the horizontal bounds,
+                        # as they by design should not affect the group's
+                        # bounding box.
                         if (
                             patch_set_name == "Progress Indicators"
                             and cp_original == 0xEDFF
@@ -566,7 +567,7 @@ if __name__ == "__main__":
 //! This file provides info extracted from the nerd fonts patcher script,
 //! specifying the scaling/positioning attributes of various glyphs.
 
-const Constraint = @import("Glyph.zig").RenderOptions.Constraint;
+const Constraint = @import("face.zig").RenderOptions.Constraint;
 
 /// Get the constraints for the provided codepoint.
 pub fn getConstraint(cp: u21) ?Constraint {
