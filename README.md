@@ -8,6 +8,10 @@
   </p>
 </p>
 
+# NOTICE
+
+gtoastty intentionally alters the behavior of Ghostty which may be result in greater security vulnerability. This is intentional, and gtoastty is **not** recommended for use on devices with critical access. Use at your own risk
+
 ---
 
 <!-- LOGO -->
